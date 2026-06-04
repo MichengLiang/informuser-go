@@ -679,6 +679,60 @@ describe('App', () => {
     expect(apiMocks.fetchArchivedHistory).toHaveBeenCalledTimes(2);
   });
 
+  it('refreshes archived history after archiving when the archived view was already loaded', async () => {
+    const history = task({
+      task_id: 'history-new-archive',
+      title: 'New archive candidate',
+      markdown: 'newly archived markdown',
+      status: 'completed',
+      completed_at: '2026-06-05T05:00:00Z',
+      user_input: 'newly archived reply',
+      session_id: 'session-new',
+      session_display_name: 'New Session',
+      session_auto_name: 'S-NEW1',
+    });
+    const archivedBefore = task({
+      task_id: 'archived-before',
+      title: 'Archived before',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      archived_at: '2026-06-05T04:00:00Z',
+      session_id: 'session-old',
+      session_display_name: 'Old Archive',
+      session_auto_name: 'S-OLD1',
+    });
+    const newlyArchived = {
+      ...history,
+      archived_at: '2026-06-05T06:00:00Z',
+    };
+    apiMocks.fetchPendingTasks.mockResolvedValue([]);
+    apiMocks.fetchHistory.mockResolvedValue([history]);
+    apiMocks.fetchArchivedHistory
+      .mockResolvedValueOnce([archivedBefore])
+      .mockResolvedValueOnce([newlyArchived, archivedBefore]);
+    apiMocks.archiveHistoryTasks.mockResolvedValue(undefined);
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
+    await userEvent.click(screen.getByTitle('Open archived history'));
+    expect(await screen.findByTestId('archived-archived-before')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Back/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Archive group session-new' }));
+    await waitFor(() =>
+      expect(apiMocks.archiveHistoryTasks).toHaveBeenCalledWith(['history-new-archive']),
+    );
+    expect(screen.queryByTestId('history-history-new-archive')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTitle('Open archived history'));
+
+    await waitFor(() => expect(apiMocks.fetchArchivedHistory).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTestId('archived-history-new-archive')).toHaveTextContent(
+      'New Session · S-NEW1',
+    );
+  });
+
   it('restores selected and grouped archived history tasks', async () => {
     const first = task({
       task_id: 'archived-1',

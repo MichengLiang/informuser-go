@@ -245,6 +245,7 @@ function App() {
     try {
       await archiveHistoryTasks(taskIds);
       setHistoryTasks((current) => current.filter((task) => !removedIds.has(task.task_id)));
+      setArchivedLoaded(false);
       setSelectedHistoryIds(new Set());
       setHistorySelectionMode(false);
       setActiveTaskId((current) =>
