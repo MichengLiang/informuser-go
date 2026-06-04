@@ -60,11 +60,18 @@ export function TaskList({
               className={`task-row ${selected ? 'selected' : ''}`}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
+              <button
+                type="button"
+                className="task-row-hit-area"
+                onClick={() => onSelectTask(task)}
+                aria-label={`Open task ${task.title}`}
+              />
               <div className="task-row-header">
                 {mode === 'history' && exportMode ? (
                   <input
                     type="checkbox"
                     checked={historyChecked}
+                    onClick={(event) => event.stopPropagation()}
                     onChange={() => {
                       onToggleHistorySelection(task.task_id);
                       onSelectTask(task);
@@ -72,14 +79,10 @@ export function TaskList({
                     aria-label="Select history item"
                   />
                 ) : null}
-                <button
-                  type="button"
-                  className="task-row-select"
-                  onClick={() => onSelectTask(task)}
-                >
+                <div className="task-row-select">
                   <strong>{task.title}</strong>
                   <time>{new Date(task.completed_at || task.created_at).toLocaleString()}</time>
-                </button>
+                </div>
               </div>
               {mode === 'pending' ? (
                 <QuickPasteReply

@@ -297,7 +297,23 @@
   border-radius: 0;
   background: transparent;
   color: var(--text);
+  cursor: pointer;
   text-align: left;
+}
+
+.task-row-hit-area {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.task-row-hit-area:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .task-row.selected {
@@ -309,9 +325,16 @@
 }
 
 .task-row-header {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  pointer-events: none;
+}
+
+.task-row-header input {
+  pointer-events: auto;
 }
 
 .task-row-select {
@@ -319,11 +342,7 @@
   flex: 1;
   min-width: 0;
   gap: 5px;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: inherit;
-  cursor: pointer;
   text-align: left;
 }
 
@@ -342,6 +361,8 @@
 }
 
 .quick-paste {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 30px;
   margin-top: 8px;

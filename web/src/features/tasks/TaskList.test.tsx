@@ -95,6 +95,51 @@ describe('TaskList', () => {
     expect(onSelectTask).toHaveBeenCalledWith(currentTask);
   });
 
+  it('selects a history task from the full visible row area', async () => {
+    const currentTask = task({ status: 'completed', completed_at: '2026-06-05T02:00:00Z' });
+    const onSelectTask = vi.fn();
+
+    render(
+      <TaskList
+        tasks={[currentTask]}
+        activeTaskId="other-task"
+        mode="history"
+        selectedHistoryIds={new Set()}
+        onSelectTask={onSelectTask}
+        onQuickReply={vi.fn()}
+        onToggleHistorySelection={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /open task need review/i }));
+    expect(onSelectTask).toHaveBeenCalledTimes(1);
+    expect(onSelectTask).toHaveBeenCalledWith(currentTask);
+  });
+
+  it('does not select a history task twice when toggling export selection', async () => {
+    const currentTask = task({ status: 'completed', completed_at: '2026-06-05T02:00:00Z' });
+    const onSelectTask = vi.fn();
+    const onToggleHistorySelection = vi.fn();
+
+    render(
+      <TaskList
+        tasks={[currentTask]}
+        activeTaskId="other-task"
+        mode="history"
+        exportMode={true}
+        selectedHistoryIds={new Set()}
+        onSelectTask={onSelectTask}
+        onQuickReply={vi.fn()}
+        onToggleHistorySelection={onToggleHistorySelection}
+      />,
+    );
+
+    await userEvent.click(screen.getByLabelText('Select history item'));
+    expect(onToggleHistorySelection).toHaveBeenCalledWith('task-1');
+    expect(onSelectTask).toHaveBeenCalledTimes(1);
+    expect(onSelectTask).toHaveBeenCalledWith(currentTask);
+  });
+
   it('renders mode-specific empty states', () => {
     const props = {
       tasks: [],
