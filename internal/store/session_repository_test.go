@@ -137,3 +137,147 @@ task_id, session_id, title, markdown, status, created_at, updated_at
 		t.Fatalf("database should remain at %s: %v", dbPath, err)
 	}
 }
+
+func TestBackfillSessionsComputesTimestampsByParsedTime(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	fractionalSecond := time.Date(2026, 6, 5, 1, 0, 0, 900000000, time.UTC)
+	wholeSecond := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+
+	if _, err := repository.db.ExecContext(ctx, `INSERT INTO tasks (
+task_id, session_id, title, markdown, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)`,
+		"task-1", "session-lexical", "Earlier", "body", domain.TaskStatusPending.String(),
+		formatTime(fractionalSecond), formatTime(fractionalSecond),
+		"task-2", "session-lexical", "Later", "body", domain.TaskStatusCancelled.String(),
+		formatTime(wholeSecond), formatTime(wholeSecond),
+	); err != nil {
+		t.Fatalf("insert tasks: %v", err)
+	}
+	if err := repository.BackfillSessions(ctx); err != nil {
+		t.Fatalf("backfill sessions: %v", err)
+	}
+
+	session, found, err := repository.FindSession(ctx, "session-lexical")
+	if err != nil {
+		t.Fatalf("find session: %v", err)
+	}
+	if !found {
+		t.Fatal("backfilled session should be found")
+	}
+	if !session.CreatedAt.Equal(wholeSecond) {
+		t.Fatalf("created_at = %s, want %s", session.CreatedAt, wholeSecond)
+	}
+	if !session.LastSeenAt.Equal(fractionalSecond) {
+		t.Fatalf("last_seen_at = %s, want %s", session.LastSeenAt, fractionalSecond)
+	}
+}
+
+func TestBackfillSessionsRejectsMalformedTaskTimestamps(t *testing.T) {
+	ctx := context.Background()
+	tests := map[string]struct {
+		createdAt string
+		updatedAt string
+	}{
+		"created_at": {createdAt: "not-a-time", updatedAt: formatTime(time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC))},
+		"updated_at": {createdAt: formatTime(time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)), updatedAt: "not-a-time"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			repository := newTestRepository(t)
+			if _, err := repository.db.ExecContext(ctx, `INSERT INTO tasks (
+task_id, session_id, title, markdown, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				"task-"+name, "session-"+name, "Malformed", "body", domain.TaskStatusPending.String(),
+				test.createdAt, test.updatedAt,
+			); err != nil {
+				t.Fatalf("insert malformed task: %v", err)
+			}
+
+			if err := repository.BackfillSessions(ctx); err == nil {
+				t.Fatal("backfill malformed task timestamp returned nil error")
+			}
+		})
+	}
+}
+
+func TestOpenMigratesPreSessionSchemaAndBackfillsTaskSessionFields(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy sqlite: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE tasks (
+  task_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  markdown TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'completed', 'cancelled')),
+  user_input TEXT NOT NULL DEFAULT '',
+  reply_source TEXT NOT NULL DEFAULT '',
+  cancel_reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  completed_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX idx_tasks_pending_session
+ON tasks(session_id)
+WHERE status = 'pending';
+CREATE INDEX idx_tasks_status_created
+ON tasks(status, created_at DESC);
+CREATE INDEX idx_tasks_completed_at
+ON tasks(completed_at DESC);
+`); err != nil {
+		_ = db.Close()
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	createdAt := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	updatedAt := createdAt.Add(time.Minute)
+	if _, err := db.ExecContext(ctx, `INSERT INTO tasks (
+task_id, session_id, title, markdown, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"task-legacy", "session-legacy", "Legacy", "body", domain.TaskStatusPending.String(),
+		formatTime(createdAt), formatTime(updatedAt),
+	); err != nil {
+		_ = db.Close()
+		t.Fatalf("insert legacy task: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy sqlite: %v", err)
+	}
+
+	repository, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open migrated repository: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatalf("close repository: %v", err)
+		}
+	})
+
+	session, found, err := repository.FindSession(ctx, "session-legacy")
+	if err != nil {
+		t.Fatalf("find migrated session: %v", err)
+	}
+	if !found {
+		t.Fatal("migrated session should be found")
+	}
+	if session.DisplayName == "" || session.AutoName == "" {
+		t.Fatalf("migrated session display fields should be populated: %#v", session)
+	}
+
+	task, found, err := repository.FindTaskByID(ctx, "task-legacy")
+	if err != nil {
+		t.Fatalf("find migrated task: %v", err)
+	}
+	if !found {
+		t.Fatal("migrated task should be found")
+	}
+	if task.SessionDisplayName != session.DisplayName || task.SessionAutoName != session.AutoName {
+		t.Fatalf("task session fields = %#v, session = %#v", task, session)
+	}
+}

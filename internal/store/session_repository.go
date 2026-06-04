@@ -107,9 +107,8 @@ func (r *TaskRepository) UpdateSessionDisplayName(
 func (r *TaskRepository) BackfillSessions(ctx context.Context) error {
 	rows, err := r.db.QueryContext(
 		ctx,
-		`SELECT session_id, MIN(created_at), MAX(updated_at)
-		FROM tasks
-		GROUP BY session_id`,
+		`SELECT session_id, created_at, updated_at
+		FROM tasks`,
 	)
 	if err != nil {
 		return err
@@ -117,17 +116,45 @@ func (r *TaskRepository) BackfillSessions(ctx context.Context) error {
 
 	type backfillSession struct {
 		sessionID  string
-		createdAt  string
-		lastSeenAt string
+		createdAt  time.Time
+		lastSeenAt time.Time
 	}
-	var sessions []backfillSession
+	sessionsByID := make(map[string]backfillSession)
 	for rows.Next() {
-		var session backfillSession
-		if err := rows.Scan(&session.sessionID, &session.createdAt, &session.lastSeenAt); err != nil {
+		var sessionID string
+		var createdAtText string
+		var updatedAtText string
+		if err := rows.Scan(&sessionID, &createdAtText, &updatedAtText); err != nil {
 			_ = rows.Close()
 			return err
 		}
-		sessions = append(sessions, session)
+		createdAt, err := parseRequiredTime(createdAtText)
+		if err != nil {
+			_ = rows.Close()
+			return err
+		}
+		updatedAt, err := parseRequiredTime(updatedAtText)
+		if err != nil {
+			_ = rows.Close()
+			return err
+		}
+
+		session, found := sessionsByID[sessionID]
+		if !found {
+			sessionsByID[sessionID] = backfillSession{
+				sessionID:  sessionID,
+				createdAt:  createdAt,
+				lastSeenAt: updatedAt,
+			}
+			continue
+		}
+		if createdAt.Before(session.createdAt) {
+			session.createdAt = createdAt
+		}
+		if updatedAt.After(session.lastSeenAt) {
+			session.lastSeenAt = updatedAt
+		}
+		sessionsByID[sessionID] = session
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
@@ -137,7 +164,7 @@ func (r *TaskRepository) BackfillSessions(ctx context.Context) error {
 		return err
 	}
 
-	for _, session := range sessions {
+	for _, session := range sessionsByID {
 		autoName := domain.AutomaticSessionName(session.sessionID)
 		if _, err := r.db.ExecContext(
 			ctx,
@@ -147,9 +174,9 @@ func (r *TaskRepository) BackfillSessions(ctx context.Context) error {
 			session.sessionID,
 			autoName,
 			autoName,
-			session.createdAt,
-			session.lastSeenAt,
-			session.lastSeenAt,
+			formatTime(session.createdAt),
+			formatTime(session.lastSeenAt),
+			formatTime(session.lastSeenAt),
 		); err != nil {
 			return err
 		}
