@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/t103o/informuser-go/internal/app"
+	"github.com/t103o/informuser-go/internal/domain"
 )
 
 type Handlers struct {
@@ -31,6 +32,14 @@ func (h *Handlers) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.publisher != nil {
+		if outcome.SupersededTaskID != "" {
+			h.publisher.Publish(domain.NewTaskCancelledEvent(outcome.SupersededTaskID, request.SessionID))
+		}
+		if outcome.Status == app.CreateTaskCreated {
+			h.publisher.Publish(domain.NewTaskCreatedEvent(outcome.Task))
+		}
+	}
 	writeJSON(w, http.StatusOK, newCreateTaskResponse(outcome))
 }
 
@@ -71,8 +80,19 @@ func (h *Handlers) submitReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.service.SubmitReply(r.Context(), app.SubmitReplyRequest{
-		TaskID:      chi.URLParam(r, "task_id"),
+	taskID := chi.URLParam(r, "task_id")
+	task, found, err := h.service.FindTask(r.Context(), taskID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, errors.New("task not found"))
+		return
+	}
+
+	err = h.service.SubmitReply(r.Context(), app.SubmitReplyRequest{
+		TaskID:      taskID,
 		UserInput:   request.UserInput,
 		ReplySource: request.ReplySource,
 	})
@@ -80,13 +100,34 @@ func (h *Handlers) submitReply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	result, err := h.service.TaskResult(r.Context(), taskID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if h.publisher != nil && result.Found {
+		h.publisher.Publish(domain.NewTaskCompletedEvent(taskID, task.SessionID, result.CompletedAt))
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handlers) cancelTask(w http.ResponseWriter, r *http.Request) {
-	if err := h.service.CancelTask(r.Context(), chi.URLParam(r, "task_id"), "cancelled_by_user"); err != nil {
+	taskID := chi.URLParam(r, "task_id")
+	task, found, err := h.service.FindTask(r.Context(), taskID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, errors.New("task not found"))
+		return
+	}
+	if err := h.service.CancelTask(r.Context(), taskID, "cancelled_by_user"); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	if h.publisher != nil {
+		h.publisher.Publish(domain.NewTaskCancelledEvent(taskID, task.SessionID))
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
