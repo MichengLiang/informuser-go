@@ -45,3 +45,17 @@ func TestTaskCompletedEvent(t *testing.T) {
 		t.Fatalf("completed_at = %s, want %s", event.CompletedAt, completedAt)
 	}
 }
+
+func TestTaskCancelledEvent(t *testing.T) {
+	event := NewTaskCancelledEvent("task-1", "session-1")
+
+	if event.Type != EventTypeTaskCancelled {
+		t.Fatalf("event type = %q, want %q", event.Type, EventTypeTaskCancelled)
+	}
+	if event.TaskID != "task-1" {
+		t.Fatalf("event task id = %q, want task-1", event.TaskID)
+	}
+	if event.SessionID != "session-1" {
+		t.Fatalf("event session id = %q, want session-1", event.SessionID)
+	}
+}

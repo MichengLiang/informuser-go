@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -93,6 +95,27 @@ func TestFindPendingBySessionID(t *testing.T) {
 	}
 }
 
+func TestFindTaskByIDAndPendingReturnNotFound(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+
+	task, found, err := repository.FindTaskByID(ctx, "missing")
+	if err != nil {
+		t.Fatalf("find missing task: %v", err)
+	}
+	if found || task.TaskID != "" {
+		t.Fatalf("missing task = %#v, found=%v", task, found)
+	}
+
+	task, found, err = repository.FindPendingBySessionID(ctx, "missing-session")
+	if err != nil {
+		t.Fatalf("find missing pending: %v", err)
+	}
+	if found || task.TaskID != "" {
+		t.Fatalf("missing pending = %#v, found=%v", task, found)
+	}
+}
+
 func TestPendingSessionUniquenessIsEnforced(t *testing.T) {
 	ctx := context.Background()
 	repository := newTestRepository(t)
@@ -133,6 +156,26 @@ func TestCancelTaskClearsPendingSessionSlot(t *testing.T) {
 	}
 }
 
+func TestCancelTaskRejectsMissingAndCompletedTasks(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+
+	if err := repository.CancelTask(ctx, "missing", "reason", now); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("cancel missing err = %v, want sql.ErrNoRows", err)
+	}
+
+	if err := repository.InsertTask(ctx, sampleTask("task-1", "session-1", now)); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+	if err := repository.CompleteTask(ctx, "task-1", "reply", "reply_panel", now.Add(time.Minute)); err != nil {
+		t.Fatalf("complete task: %v", err)
+	}
+	if err := repository.CancelTask(ctx, "task-1", "reason", now.Add(2*time.Minute)); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("cancel completed err = %v, want sql.ErrNoRows", err)
+	}
+}
+
 func TestCompleteTaskStoresReplyAndResult(t *testing.T) {
 	ctx := context.Background()
 	repository := newTestRepository(t)
@@ -152,6 +195,52 @@ func TestCompleteTaskStoresReplyAndResult(t *testing.T) {
 	}
 	if !result.Found || result.UserInput != "reply" {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestCompleteTaskRejectsMissingAndCancelledTasks(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+
+	if err := repository.CompleteTask(ctx, "missing", "reply", "reply_panel", now); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("complete missing err = %v, want sql.ErrNoRows", err)
+	}
+
+	if err := repository.InsertTask(ctx, sampleTask("task-1", "session-1", now)); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+	if err := repository.CancelTask(ctx, "task-1", "reason", now.Add(time.Minute)); err != nil {
+		t.Fatalf("cancel task: %v", err)
+	}
+	if err := repository.CompleteTask(ctx, "task-1", "reply", "reply_panel", now.Add(2*time.Minute)); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("complete cancelled err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestTaskResultReturnsNotFoundForPendingAndMissingTasks(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+
+	if err := repository.InsertTask(ctx, sampleTask("task-1", "session-1", now)); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+
+	pending, err := repository.TaskResult(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("pending result: %v", err)
+	}
+	if pending.Found {
+		t.Fatalf("pending result = %#v, want not found", pending)
+	}
+
+	missing, err := repository.TaskResult(ctx, "missing")
+	if err != nil {
+		t.Fatalf("missing result: %v", err)
+	}
+	if missing.Found {
+		t.Fatalf("missing result = %#v, want not found", missing)
 	}
 }
 

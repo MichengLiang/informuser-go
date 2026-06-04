@@ -3,6 +3,7 @@ package mcpbridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -39,6 +40,40 @@ func TestRegisterTaskPostsAskUserPayload(t *testing.T) {
 	}
 }
 
+func TestNewDaemonClientTrimsBaseURLAndUsesDefaultHTTPClient(t *testing.T) {
+	client := NewDaemonClient("http://127.0.0.1:8765///", nil)
+
+	if client.baseURL != "http://127.0.0.1:8765" {
+		t.Fatalf("baseURL = %q, want trimmed URL", client.baseURL)
+	}
+	if client.httpClient != http.DefaultClient {
+		t.Fatalf("httpClient = %#v, want http.DefaultClient", client.httpClient)
+	}
+}
+
+func TestRegisterTaskReturnsHTTPStatusError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad task", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := NewDaemonClient(server.URL, server.Client())
+	err := client.RegisterTask(context.Background(), TaskRegistration{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Need review",
+		Content:   "# Review",
+	})
+
+	var statusErr HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("err = %v, want HTTPStatusError", err)
+	}
+	if statusErr.Operation != "register task" || statusErr.StatusCode != http.StatusBadRequest {
+		t.Fatalf("statusErr = %#v", statusErr)
+	}
+}
+
 func TestTaskResultNotFoundAndFound(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +104,32 @@ func TestTaskResultNotFoundAndFound(t *testing.T) {
 	}
 	if !second.Found || second.UserInput != "reply" {
 		t.Fatalf("second result = %#v", second)
+	}
+}
+
+func TestTaskResultReturnsHTTPAndDecodeErrors(t *testing.T) {
+	tests := map[string]struct {
+		status int
+		body   string
+	}{
+		"http status": {status: http.StatusInternalServerError, body: "broken"},
+		"bad json":    {status: http.StatusOK, body: "{"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
+
+			client := NewDaemonClient(server.URL, server.Client())
+			_, err := client.TaskResult(context.Background(), "task-1")
+			if err == nil {
+				t.Fatal("TaskResult returned nil error")
+			}
+		})
 	}
 }
 
@@ -124,6 +185,49 @@ func TestWaitForReplyRetriesRegistrationAndPollsUntilFound(t *testing.T) {
 	}
 }
 
+func TestWaitForReplyKeepsPollingAfterResultErrors(t *testing.T) {
+	resultCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks":
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "created"})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/task-1/result":
+			resultCalls++
+			if resultCalls == 1 {
+				http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(taskResultPayload{Status: "found", UserInput: "reply"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewDaemonClient(server.URL, server.Client())
+	waiter := Waiter{
+		Client:        client,
+		RegisterDelay: time.Nanosecond,
+		PollInterval:  time.Nanosecond,
+		Sleep: func(ctx context.Context, d time.Duration) error {
+			return nil
+		},
+	}
+
+	reply, err := waiter.WaitForReply(context.Background(), TaskRegistration{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Need review",
+		Content:   "# Review",
+	})
+	if err != nil {
+		t.Fatalf("wait for reply: %v", err)
+	}
+	if reply != "reply" || resultCalls != 2 {
+		t.Fatalf("reply=%q resultCalls=%d", reply, resultCalls)
+	}
+}
+
 func TestWaitForReplyDoesNotRetryPermanentRegistrationError(t *testing.T) {
 	registerCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +271,26 @@ func TestWaitForReplyDoesNotRetryPermanentRegistrationError(t *testing.T) {
 	}
 }
 
+func TestRetryableRegistrationStatusClasses(t *testing.T) {
+	tests := map[int]bool{
+		http.StatusRequestTimeout:      true,
+		http.StatusTooManyRequests:     true,
+		http.StatusInternalServerError: true,
+		http.StatusBadRequest:          false,
+		http.StatusUnauthorized:        false,
+	}
+
+	for status, want := range tests {
+		err := HTTPStatusError{Operation: "register task", StatusCode: status}
+		if got := isRetryableRegistrationError(err); got != want {
+			t.Fatalf("status %d retryable = %v, want %v", status, got, want)
+		}
+	}
+	if !isRetryableRegistrationError(errors.New("network")) {
+		t.Fatal("non-HTTP registration error should be retryable")
+	}
+}
+
 func TestWaitForReplyStopsWhenContextIsCancelled(t *testing.T) {
 	client := NewDaemonClient("http://127.0.0.1:1", http.DefaultClient)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -189,5 +313,17 @@ func TestWaitForReplyStopsWhenContextIsCancelled(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("cancelled context returned nil error")
+	}
+}
+
+func TestSleepContextReturnsAfterDurationAndCancellation(t *testing.T) {
+	if err := sleepContext(context.Background(), time.Nanosecond); err != nil {
+		t.Fatalf("sleep returned error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := sleepContext(ctx, time.Second); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled sleep err = %v, want context.Canceled", err)
 	}
 }

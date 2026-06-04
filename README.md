@@ -72,8 +72,10 @@ ASKUSER_DAEMON_URL=http://127.0.0.1:8765
 
 ```bash
 go test ./...
+./scripts/check_go_coverage.sh
 pnpm --dir web check
 pnpm --dir web lint
+pnpm --dir web test:coverage
 pnpm --dir web build
 pnpm --dir web sync:embed
 pnpm --dir web test:e2e

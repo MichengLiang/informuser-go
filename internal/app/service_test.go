@@ -118,6 +118,35 @@ func TestCreateTaskIsIdempotentForCompletedTaskID(t *testing.T) {
 	}
 }
 
+func TestCreateTaskIsIdempotentForCancelledTaskID(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t)
+	request := domain.CreateTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Title:     "Original",
+		Markdown:  "original",
+	}
+
+	if _, err := service.CreateTask(ctx, request); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := service.CancelTask(ctx, "task-1", "manual_cancel"); err != nil {
+		t.Fatalf("cancel task: %v", err)
+	}
+	outcome, err := service.CreateTask(ctx, request)
+	if err != nil {
+		t.Fatalf("replay cancelled task: %v", err)
+	}
+
+	if outcome.Status != CreateTaskExists {
+		t.Fatalf("status = %q, want %q", outcome.Status, CreateTaskExists)
+	}
+	if outcome.Task.Status != domain.TaskStatusCancelled {
+		t.Fatalf("task status = %q, want cancelled", outcome.Task.Status)
+	}
+}
+
 func TestCreateTaskSupersedesOlderPendingTaskInSameSession(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService(t)
@@ -153,6 +182,52 @@ func TestCreateTaskSupersedesOlderPendingTaskInSameSession(t *testing.T) {
 	}
 	if result.Found {
 		t.Fatal("cancelled superseded task should not produce a reply result")
+	}
+}
+
+func TestCancelTaskUsesDefaultReason(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t)
+
+	if _, err := service.CreateTask(ctx, domain.CreateTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Title:     "Need reply",
+		Markdown:  "body",
+	}); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := service.CancelTask(ctx, "task-1", ""); err != nil {
+		t.Fatalf("cancel task: %v", err)
+	}
+
+	task, found, err := service.FindTask(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("find cancelled task: %v", err)
+	}
+	if !found {
+		t.Fatal("cancelled task should be found")
+	}
+	if task.Status != domain.TaskStatusCancelled || task.CancelReason != "cancelled_by_user" {
+		t.Fatalf("cancelled task = %#v", task)
+	}
+}
+
+func TestServiceRejectsInvalidOperations(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t)
+
+	if err := service.CancelTask(ctx, "", "reason"); err == nil {
+		t.Fatal("cancel with empty task id returned nil error")
+	}
+	if _, err := service.TaskResult(ctx, ""); err == nil {
+		t.Fatal("task result with empty task id returned nil error")
+	}
+	if _, _, err := service.FindTask(ctx, ""); err == nil {
+		t.Fatal("find task with empty task id returned nil error")
+	}
+	if err := service.SubmitReply(ctx, SubmitReplyRequest{TaskID: "task-1"}); err == nil {
+		t.Fatal("invalid submit reply returned nil error")
 	}
 }
 
@@ -227,5 +302,60 @@ func TestListPendingAndHistory(t *testing.T) {
 	}
 	if len(history) != 1 || history[0].TaskID != "task-2" {
 		t.Fatalf("history = %#v", history)
+	}
+}
+
+func TestListHistoryNormalizesBounds(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t)
+
+	if _, err := service.CreateTask(ctx, domain.CreateTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Title:     "Complete me",
+		Markdown:  "body",
+	}); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := service.SubmitReply(ctx, SubmitReplyRequest{
+		TaskID:      "task-1",
+		UserInput:   "reply",
+		ReplySource: "reply_panel",
+	}); err != nil {
+		t.Fatalf("submit reply: %v", err)
+	}
+
+	history, err := service.ListHistory(ctx, 0, -10)
+	if err != nil {
+		t.Fatalf("list history: %v", err)
+	}
+	if len(history) != 1 || history[0].TaskID != "task-1" {
+		t.Fatalf("history = %#v", history)
+	}
+}
+
+func TestNewServiceUsesRealClockWhenClockIsNil(t *testing.T) {
+	repository, err := store.Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatalf("open repository: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatalf("close repository: %v", err)
+		}
+	})
+
+	service := NewService(repository, nil)
+	outcome, err := service.CreateTask(context.Background(), domain.CreateTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Title:     "Need reply",
+		Markdown:  "body",
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if outcome.Task.CreatedAt.IsZero() {
+		t.Fatal("real clock produced zero created_at")
 	}
 }

@@ -47,6 +47,32 @@ func TestCreateTaskRequestValidationRejectsMissingFields(t *testing.T) {
 	}
 }
 
+func TestReplyRequestValidation(t *testing.T) {
+	request := ReplyRequest{
+		TaskID:      "task-1",
+		UserInput:   "approved",
+		ReplySource: "quick_paste",
+	}
+
+	if err := request.Validate(); err != nil {
+		t.Fatalf("valid reply returned error: %v", err)
+	}
+}
+
+func TestReplyRequestValidationRejectsMissingFields(t *testing.T) {
+	tests := map[string]ReplyRequest{
+		"task id":    {UserInput: "approved"},
+		"user input": {TaskID: "task-1"},
+		"blank":      {TaskID: " \t", UserInput: " \n"},
+	}
+
+	for name, request := range tests {
+		if err := request.Validate(); err == nil {
+			t.Fatalf("missing %s returned nil error", name)
+		}
+	}
+}
+
 func TestTaskResultFound(t *testing.T) {
 	completedAt := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
 

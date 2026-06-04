@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -213,4 +214,196 @@ func TestCreateAndReplyPublishEvents(t *testing.T) {
 	if len(publisher.events) != 2 {
 		t.Fatalf("published events = %#v, want 2 events", publisher.events)
 	}
+}
+
+func TestFindTaskEndpoint(t *testing.T) {
+	handler := newTestServer(t)
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Need review",
+		Content:   "# Review",
+	})
+
+	found := doJSON(t, handler, http.MethodGet, "/api/tasks/task-1", nil)
+	if found.Code != http.StatusOK {
+		t.Fatalf("find status = %d, body = %s", found.Code, found.Body.String())
+	}
+	body := decodeBody[taskDTO](t, found)
+	if body.TaskID != "task-1" || body.Status != "pending" {
+		t.Fatalf("find body = %#v", body)
+	}
+
+	missing := doJSON(t, handler, http.MethodGet, "/api/tasks/missing", nil)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing status = %d, body = %s", missing.Code, missing.Body.String())
+	}
+}
+
+func TestCancelTaskEndpointCancelsAndPublishesEvent(t *testing.T) {
+	publisher := &recordingPublisher{}
+	handler := newTestServerWithPublisher(t, publisher)
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Need review",
+		Content:   "# Review",
+	})
+
+	cancel := doJSON(t, handler, http.MethodPost, "/api/tasks/task-1/cancel", nil)
+	if cancel.Code != http.StatusOK {
+		t.Fatalf("cancel status = %d, body = %s", cancel.Code, cancel.Body.String())
+	}
+
+	found := doJSON(t, handler, http.MethodGet, "/api/tasks/task-1", nil)
+	body := decodeBody[taskDTO](t, found)
+	if body.Status != "cancelled" || body.CancelReason != "cancelled_by_user" {
+		t.Fatalf("cancelled body = %#v", body)
+	}
+	if len(publisher.events) != 2 {
+		t.Fatalf("published events = %#v, want create and cancel events", publisher.events)
+	}
+}
+
+func TestCancelTaskEndpointRejectsMissingAndCompletedTasks(t *testing.T) {
+	handler := newTestServer(t)
+
+	missing := doJSON(t, handler, http.MethodPost, "/api/tasks/missing/cancel", nil)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing cancel status = %d, body = %s", missing.Code, missing.Body.String())
+	}
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Need review",
+		Content:   "# Review",
+	})
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks/task-1/reply", submitReplyRequest{
+		UserInput:   "approved",
+		ReplySource: "reply_panel",
+	})
+
+	completed := doJSON(t, handler, http.MethodPost, "/api/tasks/task-1/cancel", nil)
+	if completed.Code != http.StatusBadRequest {
+		t.Fatalf("completed cancel status = %d, body = %s", completed.Code, completed.Body.String())
+	}
+}
+
+func TestCreateTaskRejectsBadJSONAndInvalidPayload(t *testing.T) {
+	handler := newTestServer(t)
+
+	badJSONRequest := httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewBufferString("{"))
+	badJSON := httptest.NewRecorder()
+	handler.ServeHTTP(badJSON, badJSONRequest)
+	if badJSON.Code != http.StatusBadRequest {
+		t.Fatalf("bad json status = %d, body = %s", badJSON.Code, badJSON.Body.String())
+	}
+
+	invalid := doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "",
+		Content:   "# Review",
+	})
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status = %d, body = %s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func TestSubmitReplyRejectsMissingBadJSONAndInvalidPayload(t *testing.T) {
+	handler := newTestServer(t)
+
+	missing := doJSON(t, handler, http.MethodPost, "/api/tasks/missing/reply", submitReplyRequest{
+		UserInput:   "approved",
+		ReplySource: "reply_panel",
+	})
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing reply status = %d, body = %s", missing.Code, missing.Body.String())
+	}
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Need review",
+		Content:   "# Review",
+	})
+
+	badJSONRequest := httptest.NewRequest(http.MethodPost, "/api/tasks/task-1/reply", bytes.NewBufferString("{"))
+	badJSON := httptest.NewRecorder()
+	handler.ServeHTTP(badJSON, badJSONRequest)
+	if badJSON.Code != http.StatusBadRequest {
+		t.Fatalf("bad json status = %d, body = %s", badJSON.Code, badJSON.Body.String())
+	}
+
+	invalid := doJSON(t, handler, http.MethodPost, "/api/tasks/task-1/reply", submitReplyRequest{
+		UserInput: "",
+	})
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid reply status = %d, body = %s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func TestHistoryEndpointUsesFallbackQueryValues(t *testing.T) {
+	handler := newTestServer(t)
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Done",
+		Content:   "body",
+	})
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks/task-1/reply", submitReplyRequest{
+		UserInput:   "reply",
+		ReplySource: "reply_panel",
+	})
+
+	history := doJSON(t, handler, http.MethodGet, "/api/history?limit=bad&offset=bad", nil)
+	if history.Code != http.StatusOK {
+		t.Fatalf("history status = %d, body = %s", history.Code, history.Body.String())
+	}
+	body := decodeBody[listTasksResponse](t, history)
+	if len(body.Tasks) != 1 || body.Tasks[0].TaskID != "task-1" {
+		t.Fatalf("history body = %#v", body)
+	}
+}
+
+func TestRouterMountsOptionalHandlers(t *testing.T) {
+	service := app.NewService(newTestRepositoryForHTTP(t), &fixedClock{now: time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)})
+	router := NewRouter(
+		service,
+		nil,
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "events")
+		}),
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "static")
+		}),
+	)
+
+	events := doJSON(t, router, http.MethodGet, "/api/events/ws", nil)
+	if events.Body.String() != "events" {
+		t.Fatalf("events body = %q", events.Body.String())
+	}
+
+	static := doJSON(t, router, http.MethodGet, "/app", nil)
+	if static.Body.String() != "static" {
+		t.Fatalf("static body = %q", static.Body.String())
+	}
+}
+
+func newTestRepositoryForHTTP(t *testing.T) *store.TaskRepository {
+	t.Helper()
+	repository, err := store.Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatalf("open repository: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatalf("close repository: %v", err)
+		}
+	})
+	return repository
 }
