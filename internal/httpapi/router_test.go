@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/t103o/informuser-go/internal/app"
+	"github.com/t103o/informuser-go/internal/domain"
 	"github.com/t103o/informuser-go/internal/store"
 )
 
@@ -164,6 +165,9 @@ func TestPendingAndHistoryEndpoints(t *testing.T) {
 	if len(pendingBody.Tasks) != 1 || pendingBody.Tasks[0].TaskID != "task-1" {
 		t.Fatalf("pending body = %#v", pendingBody)
 	}
+	if pendingBody.Tasks[0].SessionDisplayName == "" || pendingBody.Tasks[0].SessionAutoName == "" {
+		t.Fatalf("pending session fields should be populated: %#v", pendingBody.Tasks[0])
+	}
 
 	history := doJSON(t, handler, http.MethodGet, "/api/history?limit=10&offset=0", nil)
 	if history.Code != http.StatusOK {
@@ -172,6 +176,9 @@ func TestPendingAndHistoryEndpoints(t *testing.T) {
 	historyBody := decodeBody[listTasksResponse](t, history)
 	if len(historyBody.Tasks) != 1 || historyBody.Tasks[0].TaskID != "task-2" {
 		t.Fatalf("history body = %#v", historyBody)
+	}
+	if historyBody.Tasks[0].SessionDisplayName == "" || historyBody.Tasks[0].SessionAutoName == "" {
+		t.Fatalf("history session fields should be populated: %#v", historyBody.Tasks[0])
 	}
 }
 
@@ -214,6 +221,16 @@ func TestCreateAndReplyPublishEvents(t *testing.T) {
 	if len(publisher.events) != 2 {
 		t.Fatalf("published events = %#v, want 2 events", publisher.events)
 	}
+	created, ok := publisher.events[0].(domain.TaskEvent)
+	if !ok {
+		t.Fatalf("first event = %#v, want domain.TaskEvent", publisher.events[0])
+	}
+	if created.Type != domain.EventTypeTaskCreated {
+		t.Fatalf("first event type = %q, want task_created", created.Type)
+	}
+	if created.Task.SessionDisplayName == "" || created.Task.SessionAutoName == "" {
+		t.Fatalf("created task event session fields should be populated: %#v", created.Task)
+	}
 }
 
 func TestFindTaskEndpoint(t *testing.T) {
@@ -233,6 +250,9 @@ func TestFindTaskEndpoint(t *testing.T) {
 	body := decodeBody[taskDTO](t, found)
 	if body.TaskID != "task-1" || body.Status != "pending" {
 		t.Fatalf("find body = %#v", body)
+	}
+	if body.SessionDisplayName == "" || body.SessionAutoName == "" {
+		t.Fatalf("find task session fields should be populated: %#v", body)
 	}
 
 	missing := doJSON(t, handler, http.MethodGet, "/api/tasks/missing", nil)

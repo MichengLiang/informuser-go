@@ -249,6 +249,15 @@ func TestListPendingAndHistory(t *testing.T) {
 	repository := newTestRepository(t)
 	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
 
+	if _, err := repository.EnsureSession(ctx, "session-1", now); err != nil {
+		t.Fatalf("ensure pending session: %v", err)
+	}
+	if _, err := repository.EnsureSession(ctx, "session-2", now); err != nil {
+		t.Fatalf("ensure history session: %v", err)
+	}
+	if err := repository.UpdateSessionDisplayName(ctx, "session-2", "History Session", now); err != nil {
+		t.Fatalf("rename history session: %v", err)
+	}
 	if err := repository.InsertTask(ctx, sampleTask("task-1", "session-1", now)); err != nil {
 		t.Fatalf("insert pending task: %v", err)
 	}
@@ -266,6 +275,9 @@ func TestListPendingAndHistory(t *testing.T) {
 	if len(pending) != 1 || pending[0].TaskID != "task-1" {
 		t.Fatalf("pending = %#v", pending)
 	}
+	if pending[0].SessionDisplayName == "" || pending[0].SessionAutoName == "" {
+		t.Fatalf("pending session display fields should be populated: %#v", pending[0])
+	}
 
 	history, err := repository.ListHistory(ctx, 10, 0)
 	if err != nil {
@@ -273,5 +285,8 @@ func TestListPendingAndHistory(t *testing.T) {
 	}
 	if len(history) != 1 || history[0].TaskID != "task-2" {
 		t.Fatalf("history = %#v", history)
+	}
+	if history[0].SessionDisplayName != "History Session" || history[0].SessionAutoName == "" {
+		t.Fatalf("history session display fields should be populated: %#v", history[0])
 	}
 }

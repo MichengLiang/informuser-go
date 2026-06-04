@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -21,6 +22,12 @@ func (c *stepClock) Now() time.Time {
 
 func newTestService(t *testing.T) *Service {
 	t.Helper()
+	service, _ := newTestServiceWithRepository(t)
+	return service
+}
+
+func newTestServiceWithRepository(t *testing.T) (*Service, *store.TaskRepository) {
+	t.Helper()
 
 	repository, err := store.Open(context.Background(), ":memory:")
 	if err != nil {
@@ -32,12 +39,12 @@ func newTestService(t *testing.T) *Service {
 		}
 	})
 
-	return NewService(repository, &stepClock{next: time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)})
+	return NewService(repository, &stepClock{next: time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)}), repository
 }
 
 func TestCreateTaskCreatesPendingTask(t *testing.T) {
 	ctx := context.Background()
-	service := newTestService(t)
+	service, repository := newTestServiceWithRepository(t)
 
 	outcome, err := service.CreateTask(ctx, domain.CreateTaskRequest{
 		TaskID:    "task-1",
@@ -54,6 +61,57 @@ func TestCreateTaskCreatesPendingTask(t *testing.T) {
 	}
 	if outcome.Task.TaskID != "task-1" || outcome.Task.Status != domain.TaskStatusPending {
 		t.Fatalf("unexpected task: %#v", outcome.Task)
+	}
+	if outcome.Task.SessionDisplayName == "" || outcome.Task.SessionAutoName == "" {
+		t.Fatalf("task session display fields should be populated: %#v", outcome.Task)
+	}
+
+	session, found, err := repository.FindSession(ctx, "session-1")
+	if err != nil {
+		t.Fatalf("find session: %v", err)
+	}
+	if !found {
+		t.Fatal("session should be created with task")
+	}
+	if session.DisplayName != session.AutoName {
+		t.Fatalf("new session = %#v, want display name initialized to auto name", session)
+	}
+}
+
+func TestCreateTaskDoesNotOverwriteRenamedSessionDisplayName(t *testing.T) {
+	ctx := context.Background()
+	service, repository := newTestServiceWithRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+
+	if _, err := repository.EnsureSession(ctx, "session-1", now); err != nil {
+		t.Fatalf("ensure session: %v", err)
+	}
+	if err := repository.UpdateSessionDisplayName(ctx, "session-1", "Spring", now.Add(time.Minute)); err != nil {
+		t.Fatalf("rename session: %v", err)
+	}
+
+	outcome, err := service.CreateTask(ctx, domain.CreateTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Title:     "Need review",
+		Markdown:  "body",
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	if outcome.Task.SessionDisplayName != "Spring" {
+		t.Fatalf("task session display name = %q, want Spring", outcome.Task.SessionDisplayName)
+	}
+	session, found, err := repository.FindSession(ctx, "session-1")
+	if err != nil {
+		t.Fatalf("find session: %v", err)
+	}
+	if !found {
+		t.Fatal("session should be found")
+	}
+	if session.DisplayName != "Spring" {
+		t.Fatalf("session display name = %q, want Spring", session.DisplayName)
 	}
 }
 
@@ -357,5 +415,14 @@ func TestNewServiceUsesRealClockWhenClockIsNil(t *testing.T) {
 	}
 	if outcome.Task.CreatedAt.IsZero() {
 		t.Fatal("real clock produced zero created_at")
+	}
+}
+
+func TestIsNotFoundRecognizesSQLNoRows(t *testing.T) {
+	if !IsNotFound(sql.ErrNoRows) {
+		t.Fatal("sql.ErrNoRows should be recognized as not found")
+	}
+	if IsNotFound(context.Canceled) {
+		t.Fatal("context.Canceled should not be recognized as not found")
 	}
 }

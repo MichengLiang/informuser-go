@@ -22,7 +22,13 @@ func Open(ctx context.Context, dataSourceName string) (*TaskRepository, error) {
 		return nil, err
 	}
 
-	return &TaskRepository{db: db}, nil
+	repository := &TaskRepository{db: db}
+	if err := repository.BackfillSessions(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return repository, nil
 }
 
 func (r *TaskRepository) Close() error {

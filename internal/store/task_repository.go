@@ -34,10 +34,12 @@ func (r *TaskRepository) InsertTask(ctx context.Context, task domain.Task) error
 func (r *TaskRepository) FindTaskByID(ctx context.Context, taskID string) (domain.Task, bool, error) {
 	return r.scanTask(r.db.QueryRowContext(
 		ctx,
-		`SELECT task_id, session_id, title, markdown, status, user_input, reply_source,
-			cancel_reason, created_at, completed_at, updated_at
-		FROM tasks
-		WHERE task_id = ?`,
+		`SELECT t.task_id, t.session_id, COALESCE(s.display_name, ''), COALESCE(s.auto_name, ''),
+			t.title, t.markdown, t.status, t.user_input, t.reply_source,
+			t.cancel_reason, t.created_at, t.completed_at, t.updated_at
+		FROM tasks t
+		LEFT JOIN sessions s ON s.session_id = t.session_id
+		WHERE t.task_id = ?`,
 		taskID,
 	))
 }
@@ -45,10 +47,12 @@ func (r *TaskRepository) FindTaskByID(ctx context.Context, taskID string) (domai
 func (r *TaskRepository) FindPendingBySessionID(ctx context.Context, sessionID string) (domain.Task, bool, error) {
 	return r.scanTask(r.db.QueryRowContext(
 		ctx,
-		`SELECT task_id, session_id, title, markdown, status, user_input, reply_source,
-			cancel_reason, created_at, completed_at, updated_at
-		FROM tasks
-		WHERE session_id = ? AND status = ?
+		`SELECT t.task_id, t.session_id, COALESCE(s.display_name, ''), COALESCE(s.auto_name, ''),
+			t.title, t.markdown, t.status, t.user_input, t.reply_source,
+			t.cancel_reason, t.created_at, t.completed_at, t.updated_at
+		FROM tasks t
+		LEFT JOIN sessions s ON s.session_id = t.session_id
+		WHERE t.session_id = ? AND t.status = ?
 		LIMIT 1`,
 		sessionID,
 		domain.TaskStatusPending.String(),
@@ -127,11 +131,13 @@ func (r *TaskRepository) TaskResult(ctx context.Context, taskID string) (domain.
 func (r *TaskRepository) ListPending(ctx context.Context) ([]domain.Task, error) {
 	rows, err := r.db.QueryContext(
 		ctx,
-		`SELECT task_id, session_id, title, markdown, status, user_input, reply_source,
-			cancel_reason, created_at, completed_at, updated_at
-		FROM tasks
-		WHERE status = ?
-		ORDER BY created_at DESC`,
+		`SELECT t.task_id, t.session_id, COALESCE(s.display_name, ''), COALESCE(s.auto_name, ''),
+			t.title, t.markdown, t.status, t.user_input, t.reply_source,
+			t.cancel_reason, t.created_at, t.completed_at, t.updated_at
+		FROM tasks t
+		LEFT JOIN sessions s ON s.session_id = t.session_id
+		WHERE t.status = ?
+		ORDER BY t.created_at DESC`,
 		domain.TaskStatusPending.String(),
 	)
 	if err != nil {
@@ -145,11 +151,13 @@ func (r *TaskRepository) ListPending(ctx context.Context) ([]domain.Task, error)
 func (r *TaskRepository) ListHistory(ctx context.Context, limit int, offset int) ([]domain.Task, error) {
 	rows, err := r.db.QueryContext(
 		ctx,
-		`SELECT task_id, session_id, title, markdown, status, user_input, reply_source,
-			cancel_reason, created_at, completed_at, updated_at
-		FROM tasks
-		WHERE status = ?
-		ORDER BY completed_at DESC
+		`SELECT t.task_id, t.session_id, COALESCE(s.display_name, ''), COALESCE(s.auto_name, ''),
+			t.title, t.markdown, t.status, t.user_input, t.reply_source,
+			t.cancel_reason, t.created_at, t.completed_at, t.updated_at
+		FROM tasks t
+		LEFT JOIN sessions s ON s.session_id = t.session_id
+		WHERE t.status = ?
+		ORDER BY t.completed_at DESC
 		LIMIT ? OFFSET ?`,
 		domain.TaskStatusCompleted.String(),
 		limit,
@@ -203,6 +211,8 @@ func scanTask(scanner taskScanner) (domain.Task, error) {
 	err := scanner.Scan(
 		&task.TaskID,
 		&task.SessionID,
+		&task.SessionDisplayName,
+		&task.SessionAutoName,
 		&task.Title,
 		&task.Markdown,
 		&status,
@@ -231,6 +241,12 @@ func scanTask(scanner taskScanner) (domain.Task, error) {
 	}
 
 	task.Status = domain.TaskStatus(status)
+	if task.SessionAutoName == "" {
+		task.SessionAutoName = domain.AutomaticSessionName(task.SessionID)
+	}
+	if task.SessionDisplayName == "" {
+		task.SessionDisplayName = task.SessionAutoName
+	}
 	task.CreatedAt = createdAt
 	task.CompletedAt = completedAt
 	task.UpdatedAt = updatedAt

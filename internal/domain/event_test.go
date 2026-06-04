@@ -8,13 +8,15 @@ import (
 func TestTaskCreatedEvent(t *testing.T) {
 	createdAt := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
 	task := Task{
-		TaskID:    "task-1",
-		SessionID: "session-1",
-		Title:     "Need review",
-		Markdown:  "# Review",
-		Status:    TaskStatusPending,
-		CreatedAt: createdAt,
-		UpdatedAt: createdAt,
+		TaskID:             "task-1",
+		SessionID:          "session-1",
+		Title:              "Need review",
+		Markdown:           "# Review",
+		Status:             TaskStatusPending,
+		SessionDisplayName: "Spring",
+		SessionAutoName:    "S-ABCDE",
+		CreatedAt:          createdAt,
+		UpdatedAt:          createdAt,
 	}
 
 	event := NewTaskCreatedEvent(task)
@@ -24,6 +26,9 @@ func TestTaskCreatedEvent(t *testing.T) {
 	}
 	if event.Task.TaskID != "task-1" {
 		t.Fatalf("event task id = %q, want task-1", event.Task.TaskID)
+	}
+	if event.Task.SessionDisplayName != "Spring" || event.Task.SessionAutoName != "S-ABCDE" {
+		t.Fatalf("event task session fields = %#v", event.Task)
 	}
 }
 

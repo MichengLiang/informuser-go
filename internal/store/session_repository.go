@@ -1,0 +1,158 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"time"
+
+	"github.com/t103o/informuser-go/internal/domain"
+)
+
+func (r *TaskRepository) EnsureSession(ctx context.Context, sessionID string, seenAt time.Time) (domain.Session, error) {
+	autoName := domain.AutomaticSessionName(sessionID)
+	_, err := r.db.ExecContext(
+		ctx,
+		`INSERT INTO sessions (
+			session_id, display_name, auto_name, created_at, updated_at, last_seen_at
+		) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(session_id) DO UPDATE SET last_seen_at = excluded.last_seen_at`,
+		sessionID,
+		autoName,
+		autoName,
+		formatTime(seenAt),
+		formatTime(seenAt),
+		formatTime(seenAt),
+	)
+	if err != nil {
+		return domain.Session{}, err
+	}
+
+	session, found, err := r.FindSession(ctx, sessionID)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	if !found {
+		return domain.Session{}, sql.ErrNoRows
+	}
+	return session, nil
+}
+
+func (r *TaskRepository) FindSession(ctx context.Context, sessionID string) (domain.Session, bool, error) {
+	var session domain.Session
+	var createdAtText string
+	var updatedAtText string
+	var lastSeenAtText string
+	err := r.db.QueryRowContext(
+		ctx,
+		`SELECT session_id, display_name, auto_name, created_at, updated_at, last_seen_at
+		FROM sessions
+		WHERE session_id = ?`,
+		sessionID,
+	).Scan(
+		&session.SessionID,
+		&session.DisplayName,
+		&session.AutoName,
+		&createdAtText,
+		&updatedAtText,
+		&lastSeenAtText,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Session{}, false, nil
+	}
+	if err != nil {
+		return domain.Session{}, false, err
+	}
+
+	createdAt, err := parseRequiredTime(createdAtText)
+	if err != nil {
+		return domain.Session{}, false, err
+	}
+	updatedAt, err := parseRequiredTime(updatedAtText)
+	if err != nil {
+		return domain.Session{}, false, err
+	}
+	lastSeenAt, err := parseRequiredTime(lastSeenAtText)
+	if err != nil {
+		return domain.Session{}, false, err
+	}
+
+	session.CreatedAt = createdAt
+	session.UpdatedAt = updatedAt
+	session.LastSeenAt = lastSeenAt
+	return session, true, nil
+}
+
+func (r *TaskRepository) UpdateSessionDisplayName(
+	ctx context.Context,
+	sessionID string,
+	displayName string,
+	updatedAt time.Time,
+) error {
+	result, err := r.db.ExecContext(
+		ctx,
+		`UPDATE sessions
+		SET display_name = ?, updated_at = ?
+		WHERE session_id = ?`,
+		displayName,
+		formatTime(updatedAt),
+		sessionID,
+	)
+	if err != nil {
+		return err
+	}
+	return requireAffected(result)
+}
+
+func (r *TaskRepository) BackfillSessions(ctx context.Context) error {
+	rows, err := r.db.QueryContext(
+		ctx,
+		`SELECT session_id, MIN(created_at), MAX(updated_at)
+		FROM tasks
+		GROUP BY session_id`,
+	)
+	if err != nil {
+		return err
+	}
+
+	type backfillSession struct {
+		sessionID  string
+		createdAt  string
+		lastSeenAt string
+	}
+	var sessions []backfillSession
+	for rows.Next() {
+		var session backfillSession
+		if err := rows.Scan(&session.sessionID, &session.createdAt, &session.lastSeenAt); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		sessions = append(sessions, session)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	for _, session := range sessions {
+		autoName := domain.AutomaticSessionName(session.sessionID)
+		if _, err := r.db.ExecContext(
+			ctx,
+			`INSERT OR IGNORE INTO sessions (
+				session_id, display_name, auto_name, created_at, updated_at, last_seen_at
+			) VALUES (?, ?, ?, ?, ?, ?)`,
+			session.sessionID,
+			autoName,
+			autoName,
+			session.createdAt,
+			session.lastSeenAt,
+			session.lastSeenAt,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}

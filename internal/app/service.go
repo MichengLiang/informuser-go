@@ -97,14 +97,20 @@ func (s *Service) CreateTask(ctx context.Context, request domain.CreateTaskReque
 		now = s.clock.Now()
 	}
 
+	session, err := s.repository.EnsureSession(ctx, request.SessionID, now)
+	if err != nil {
+		return CreateTaskOutcome{}, err
+	}
 	task := domain.Task{
-		TaskID:    request.TaskID,
-		SessionID: request.SessionID,
-		Title:     request.Title,
-		Markdown:  request.Markdown,
-		Status:    domain.TaskStatusPending,
-		CreatedAt: now,
-		UpdatedAt: now,
+		TaskID:             request.TaskID,
+		SessionID:          request.SessionID,
+		SessionDisplayName: session.DisplayName,
+		SessionAutoName:    session.AutoName,
+		Title:              request.Title,
+		Markdown:           request.Markdown,
+		Status:             domain.TaskStatusPending,
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 	if err := s.repository.InsertTask(ctx, task); err != nil {
 		return CreateTaskOutcome{}, err

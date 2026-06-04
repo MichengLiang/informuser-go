@@ -83,32 +83,36 @@ func newListTasksResponse(tasks []domain.Task) listTasksResponse {
 }
 
 type taskDTO struct {
-	TaskID       string `json:"task_id"`
-	SessionID    string `json:"session_id"`
-	Title        string `json:"title"`
-	Markdown     string `json:"markdown"`
-	Status       string `json:"status"`
-	UserInput    string `json:"user_input,omitempty"`
-	ReplySource  string `json:"reply_source,omitempty"`
-	CancelReason string `json:"cancel_reason,omitempty"`
-	CreatedAt    string `json:"created_at"`
-	CompletedAt  string `json:"completed_at,omitempty"`
-	UpdatedAt    string `json:"updated_at"`
+	TaskID             string `json:"task_id"`
+	SessionID          string `json:"session_id"`
+	SessionDisplayName string `json:"session_display_name"`
+	SessionAutoName    string `json:"session_auto_name"`
+	Title              string `json:"title"`
+	Markdown           string `json:"markdown"`
+	Status             string `json:"status"`
+	UserInput          string `json:"user_input,omitempty"`
+	ReplySource        string `json:"reply_source,omitempty"`
+	CancelReason       string `json:"cancel_reason,omitempty"`
+	CreatedAt          string `json:"created_at"`
+	CompletedAt        string `json:"completed_at,omitempty"`
+	UpdatedAt          string `json:"updated_at"`
 }
 
 func newTaskDTO(task domain.Task) taskDTO {
 	return taskDTO{
-		TaskID:       task.TaskID,
-		SessionID:    task.SessionID,
-		Title:        task.Title,
-		Markdown:     task.Markdown,
-		Status:       task.Status.String(),
-		UserInput:    task.UserInput,
-		ReplySource:  task.ReplySource,
-		CancelReason: task.CancelReason,
-		CreatedAt:    formatJSONTime(task.CreatedAt),
-		CompletedAt:  formatOptionalJSONTime(task.CompletedAt),
-		UpdatedAt:    formatJSONTime(task.UpdatedAt),
+		TaskID:             task.TaskID,
+		SessionID:          task.SessionID,
+		SessionDisplayName: task.SessionDisplayName,
+		SessionAutoName:    task.SessionAutoName,
+		Title:              task.Title,
+		Markdown:           task.Markdown,
+		Status:             task.Status.String(),
+		UserInput:          task.UserInput,
+		ReplySource:        task.ReplySource,
+		CancelReason:       task.CancelReason,
+		CreatedAt:          formatJSONTime(task.CreatedAt),
+		CompletedAt:        formatOptionalJSONTime(task.CompletedAt),
+		UpdatedAt:          formatJSONTime(task.UpdatedAt),
 	}
 }
 
