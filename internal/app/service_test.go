@@ -526,6 +526,12 @@ func TestArchiveAndUnarchiveRejectInvalidTaskSets(t *testing.T) {
 	if _, err := service.UnarchiveHistoryTasks(ctx, nil); err == nil {
 		t.Fatal("unarchive empty task ids returned nil error")
 	}
+	if _, err := service.ArchiveHistoryTasks(ctx, []string{" \t "}); err == nil {
+		t.Fatal("archive blank task id returned nil error")
+	}
+	if _, err := service.UnarchiveHistoryTasks(ctx, []string{" \t "}); err == nil {
+		t.Fatal("unarchive blank task id returned nil error")
+	}
 	if _, err := service.ArchiveHistoryTasks(ctx, []string{"missing"}); err == nil {
 		t.Fatal("archive missing task returned nil error")
 	}
@@ -556,6 +562,42 @@ func TestArchiveAndUnarchiveRejectInvalidTaskSets(t *testing.T) {
 	}
 	if _, err := service.UnarchiveHistoryTasks(ctx, []string{"pending-task"}); err == nil {
 		t.Fatal("unarchive cancelled task returned nil error")
+	}
+}
+
+func TestArchiveAndUnarchiveDeduplicateTaskIDs(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t)
+
+	if _, err := service.CreateTask(ctx, domain.CreateTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Title:     "Complete me",
+		Markdown:  "body",
+	}); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := service.SubmitReply(ctx, SubmitReplyRequest{
+		TaskID:      "task-1",
+		UserInput:   "reply",
+		ReplySource: "reply_panel",
+	}); err != nil {
+		t.Fatalf("submit reply: %v", err)
+	}
+
+	archive, err := service.ArchiveHistoryTasks(ctx, []string{"task-1", "task-1"})
+	if err != nil {
+		t.Fatalf("archive duplicate ids: %v", err)
+	}
+	if archive.Updated != 1 {
+		t.Fatalf("archive duplicate updated = %d, want unique actual changes", archive.Updated)
+	}
+	restore, err := service.UnarchiveHistoryTasks(ctx, []string{"task-1", "task-1"})
+	if err != nil {
+		t.Fatalf("unarchive duplicate ids: %v", err)
+	}
+	if restore.Updated != 1 {
+		t.Fatalf("unarchive duplicate updated = %d, want unique actual changes", restore.Updated)
 	}
 }
 

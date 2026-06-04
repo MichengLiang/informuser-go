@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type EventType string
 
@@ -16,6 +19,28 @@ type TaskEvent struct {
 	TaskID      string    `json:"task_id,omitempty"`
 	SessionID   string    `json:"session_id,omitempty"`
 	CompletedAt time.Time `json:"completed_at,omitempty"`
+}
+
+func (e TaskEvent) MarshalJSON() ([]byte, error) {
+	type taskEventJSON struct {
+		Type        EventType  `json:"type"`
+		Task        *Task      `json:"task,omitempty"`
+		TaskID      string     `json:"task_id,omitempty"`
+		SessionID   string     `json:"session_id,omitempty"`
+		CompletedAt *time.Time `json:"completed_at,omitempty"`
+	}
+	value := taskEventJSON{
+		Type:      e.Type,
+		TaskID:    e.TaskID,
+		SessionID: e.SessionID,
+	}
+	if e.Task.TaskID != "" {
+		value.Task = &e.Task
+	}
+	if !e.CompletedAt.IsZero() {
+		value.CompletedAt = &e.CompletedAt
+	}
+	return json.Marshal(value)
 }
 
 func NewTaskCreatedEvent(task Task) TaskEvent {

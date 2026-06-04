@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -33,6 +34,46 @@ type Task struct {
 	CompletedAt        time.Time  `json:"completed_at,omitempty"`
 	ArchivedAt         time.Time  `json:"archived_at,omitempty"`
 	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+func (t Task) MarshalJSON() ([]byte, error) {
+	type taskJSON struct {
+		TaskID             string     `json:"task_id"`
+		SessionID          string     `json:"session_id"`
+		SessionDisplayName string     `json:"session_display_name"`
+		SessionAutoName    string     `json:"session_auto_name"`
+		Title              string     `json:"title"`
+		Markdown           string     `json:"markdown"`
+		Status             TaskStatus `json:"status"`
+		UserInput          string     `json:"user_input,omitempty"`
+		ReplySource        string     `json:"reply_source,omitempty"`
+		CancelReason       string     `json:"cancel_reason,omitempty"`
+		CreatedAt          time.Time  `json:"created_at"`
+		CompletedAt        *time.Time `json:"completed_at,omitempty"`
+		ArchivedAt         *time.Time `json:"archived_at,omitempty"`
+		UpdatedAt          time.Time  `json:"updated_at"`
+	}
+	value := taskJSON{
+		TaskID:             t.TaskID,
+		SessionID:          t.SessionID,
+		SessionDisplayName: t.SessionDisplayName,
+		SessionAutoName:    t.SessionAutoName,
+		Title:              t.Title,
+		Markdown:           t.Markdown,
+		Status:             t.Status,
+		UserInput:          t.UserInput,
+		ReplySource:        t.ReplySource,
+		CancelReason:       t.CancelReason,
+		CreatedAt:          t.CreatedAt,
+		UpdatedAt:          t.UpdatedAt,
+	}
+	if !t.CompletedAt.IsZero() {
+		value.CompletedAt = &t.CompletedAt
+	}
+	if !t.ArchivedAt.IsZero() {
+		value.ArchivedAt = &t.ArchivedAt
+	}
+	return json.Marshal(value)
 }
 
 type CreateTaskRequest struct {

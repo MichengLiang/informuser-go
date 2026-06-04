@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -29,6 +31,33 @@ func TestTaskCreatedEvent(t *testing.T) {
 	}
 	if event.Task.SessionDisplayName != "Spring" || event.Task.SessionAutoName != "S-ABCDE" {
 		t.Fatalf("event task session fields = %#v", event.Task)
+	}
+}
+
+func TestTaskCreatedEventJSONOmitsZeroArchivedAt(t *testing.T) {
+	createdAt := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	event := NewTaskCreatedEvent(Task{
+		TaskID:             "task-1",
+		SessionID:          "session-1",
+		Title:              "Need review",
+		Markdown:           "# Review",
+		Status:             TaskStatusPending,
+		SessionDisplayName: "Spring",
+		SessionAutoName:    "S-ABCDE",
+		CreatedAt:          createdAt,
+		UpdatedAt:          createdAt,
+	})
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+
+	if strings.Contains(string(payload), "0001-01-01") {
+		t.Fatalf("task_created payload contains truthy zero time: %s", payload)
+	}
+	if strings.Contains(string(payload), `"archived_at"`) {
+		t.Fatalf("pending task_created payload should omit archived_at: %s", payload)
 	}
 }
 

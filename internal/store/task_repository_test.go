@@ -291,6 +291,37 @@ func TestListPendingAndHistory(t *testing.T) {
 	}
 }
 
+func TestListHistoryUsesStableTaskIDTieBreaker(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	completedAt := now.Add(time.Minute)
+
+	for _, taskID := range []string{"task-a", "task-c", "task-b"} {
+		if err := repository.InsertTask(ctx, sampleTask(taskID, "session-"+taskID, now)); err != nil {
+			t.Fatalf("insert %s: %v", taskID, err)
+		}
+		if err := repository.CompleteTask(ctx, taskID, "reply", "reply_panel", completedAt); err != nil {
+			t.Fatalf("complete %s: %v", taskID, err)
+		}
+	}
+
+	firstPage, err := repository.ListHistory(ctx, 2, 0)
+	if err != nil {
+		t.Fatalf("list first history page: %v", err)
+	}
+	secondPage, err := repository.ListHistory(ctx, 2, 2)
+	if err != nil {
+		t.Fatalf("list second history page: %v", err)
+	}
+
+	got := append(taskIDs(firstPage), taskIDs(secondPage)...)
+	want := []string{"task-c", "task-b", "task-a"}
+	if !equalStrings(got, want) {
+		t.Fatalf("history order = %v, want %v", got, want)
+	}
+}
+
 func TestArchiveAndUnarchiveHistoryTasks(t *testing.T) {
 	ctx := context.Background()
 	repository := newTestRepository(t)
@@ -338,7 +369,7 @@ func TestArchiveAndUnarchiveHistoryTasks(t *testing.T) {
 		t.Fatalf("repeat archive updated = %d, want 0", updated)
 	}
 
-	updated, err = repository.UnarchiveHistoryTasks(ctx, []string{"task-1"})
+	updated, err = repository.UnarchiveHistoryTasks(ctx, []string{"task-1"}, archivedAt.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("unarchive task: %v", err)
 	}
@@ -353,12 +384,133 @@ func TestArchiveAndUnarchiveHistoryTasks(t *testing.T) {
 		t.Fatalf("restored history = %#v", history)
 	}
 
-	updated, err = repository.UnarchiveHistoryTasks(ctx, []string{"task-1"})
+	updated, err = repository.UnarchiveHistoryTasks(ctx, []string{"task-1"}, archivedAt.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("repeat unarchive task: %v", err)
 	}
 	if updated != 0 {
 		t.Fatalf("repeat unarchive updated = %d, want 0", updated)
+	}
+}
+
+func TestListArchivedHistoryUsesStableTieBreakers(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	completedAt := now.Add(time.Minute)
+	archivedAt := completedAt.Add(time.Minute)
+
+	for _, taskID := range []string{"task-a", "task-c", "task-b"} {
+		if err := repository.InsertTask(ctx, sampleTask(taskID, "session-"+taskID, now)); err != nil {
+			t.Fatalf("insert %s: %v", taskID, err)
+		}
+		if err := repository.CompleteTask(ctx, taskID, "reply", "reply_panel", completedAt); err != nil {
+			t.Fatalf("complete %s: %v", taskID, err)
+		}
+	}
+	if _, err := repository.ArchiveHistoryTasks(ctx, []string{"task-a", "task-c", "task-b"}, archivedAt); err != nil {
+		t.Fatalf("archive tasks: %v", err)
+	}
+
+	firstPage, err := repository.ListArchivedHistory(ctx, 2, 0)
+	if err != nil {
+		t.Fatalf("list first archived page: %v", err)
+	}
+	secondPage, err := repository.ListArchivedHistory(ctx, 2, 2)
+	if err != nil {
+		t.Fatalf("list second archived page: %v", err)
+	}
+
+	got := append(taskIDs(firstPage), taskIDs(secondPage)...)
+	want := []string{"task-c", "task-b", "task-a"}
+	if !equalStrings(got, want) {
+		t.Fatalf("archived history order = %v, want %v", got, want)
+	}
+}
+
+func TestArchiveAndUnarchiveDeduplicateTaskIDsAndUnarchiveUpdatesTimestamp(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	completedAt := now.Add(time.Minute)
+	archivedAt := completedAt.Add(time.Minute)
+	unarchivedAt := archivedAt.Add(time.Minute)
+
+	if err := repository.InsertTask(ctx, sampleTask("task-1", "session-1", now)); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+	if err := repository.CompleteTask(ctx, "task-1", "reply", "reply_panel", completedAt); err != nil {
+		t.Fatalf("complete task: %v", err)
+	}
+	updated, err := repository.ArchiveHistoryTasks(ctx, []string{"task-1", "task-1"}, archivedAt)
+	if err != nil {
+		t.Fatalf("archive duplicate ids: %v", err)
+	}
+	if updated != 1 {
+		t.Fatalf("archive duplicate updated = %d, want 1", updated)
+	}
+
+	updated, err = repository.UnarchiveHistoryTasks(ctx, []string{"task-1", "task-1"}, unarchivedAt)
+	if err != nil {
+		t.Fatalf("unarchive duplicate ids: %v", err)
+	}
+	if updated != 1 {
+		t.Fatalf("unarchive duplicate updated = %d, want 1", updated)
+	}
+	task, found, err := repository.FindTaskByID(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("find unarchived task: %v", err)
+	}
+	if !found {
+		t.Fatal("task should be found")
+	}
+	if !task.UpdatedAt.Equal(unarchivedAt) {
+		t.Fatalf("unarchived updated_at = %s, want %s", task.UpdatedAt, unarchivedAt)
+	}
+}
+
+func TestArchiveAndUnarchiveAreAtomicForMixedValidAndInvalidIDs(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	completedAt := now.Add(time.Minute)
+	archivedAt := completedAt.Add(time.Minute)
+
+	if err := repository.InsertTask(ctx, sampleTask("valid-task", "session-1", now)); err != nil {
+		t.Fatalf("insert valid task: %v", err)
+	}
+	if err := repository.CompleteTask(ctx, "valid-task", "reply", "reply_panel", completedAt); err != nil {
+		t.Fatalf("complete valid task: %v", err)
+	}
+	if _, err := repository.ArchiveHistoryTasks(ctx, []string{"valid-task", "missing-task"}, archivedAt); err == nil {
+		t.Fatal("archive mixed valid and missing ids returned nil error")
+	}
+	task, found, err := repository.FindTaskByID(ctx, "valid-task")
+	if err != nil {
+		t.Fatalf("find valid task after failed archive: %v", err)
+	}
+	if !found {
+		t.Fatal("valid task should be found")
+	}
+	if !task.ArchivedAt.IsZero() {
+		t.Fatalf("valid task archived_at = %s after failed archive, want zero", task.ArchivedAt)
+	}
+
+	if _, err := repository.ArchiveHistoryTasks(ctx, []string{"valid-task"}, archivedAt); err != nil {
+		t.Fatalf("archive valid task: %v", err)
+	}
+	if _, err := repository.UnarchiveHistoryTasks(ctx, []string{"valid-task", "missing-task"}, archivedAt.Add(time.Minute)); err == nil {
+		t.Fatal("unarchive mixed valid and missing ids returned nil error")
+	}
+	task, found, err = repository.FindTaskByID(ctx, "valid-task")
+	if err != nil {
+		t.Fatalf("find valid task after failed unarchive: %v", err)
+	}
+	if !found {
+		t.Fatal("valid task should be found")
+	}
+	if task.ArchivedAt.IsZero() {
+		t.Fatal("valid task should remain archived after failed unarchive")
 	}
 }
 
@@ -381,8 +533,28 @@ func TestArchiveAndUnarchiveRejectMissingAndNonCompletedTasks(t *testing.T) {
 		if _, err := repository.ArchiveHistoryTasks(ctx, ids, now.Add(time.Hour)); err == nil {
 			t.Fatalf("archive ids %v returned nil error", ids)
 		}
-		if _, err := repository.UnarchiveHistoryTasks(ctx, ids); err == nil {
+		if _, err := repository.UnarchiveHistoryTasks(ctx, ids, now.Add(time.Hour)); err == nil {
 			t.Fatalf("unarchive ids %v returned nil error", ids)
 		}
 	}
+}
+
+func taskIDs(tasks []domain.Task) []string {
+	ids := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.TaskID)
+	}
+	return ids
+}
+
+func equalStrings(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }

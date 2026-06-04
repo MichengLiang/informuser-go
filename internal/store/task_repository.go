@@ -9,6 +9,8 @@ import (
 	"github.com/t103o/informuser-go/internal/domain"
 )
 
+var ErrTaskNotCompleted = errors.New("task is not completed")
+
 func (r *TaskRepository) InsertTask(ctx context.Context, task domain.Task) error {
 	_, err := r.db.ExecContext(
 		ctx,
@@ -158,7 +160,7 @@ func (r *TaskRepository) ListHistory(ctx context.Context, limit int, offset int)
 		FROM tasks t
 		LEFT JOIN sessions s ON s.session_id = t.session_id
 		WHERE t.status = ? AND t.archived_at = ''
-		ORDER BY t.completed_at DESC
+		ORDER BY t.completed_at DESC, t.task_id DESC
 		LIMIT ? OFFSET ?`,
 		domain.TaskStatusCompleted.String(),
 		limit,
@@ -181,7 +183,7 @@ func (r *TaskRepository) ListArchivedHistory(ctx context.Context, limit int, off
 		FROM tasks t
 		LEFT JOIN sessions s ON s.session_id = t.session_id
 		WHERE t.status = ? AND t.archived_at <> ''
-		ORDER BY t.archived_at DESC
+		ORDER BY t.archived_at DESC, t.completed_at DESC, t.task_id DESC
 		LIMIT ? OFFSET ?`,
 		domain.TaskStatusCompleted.String(),
 		limit,
@@ -204,13 +206,15 @@ func (r *TaskRepository) ArchiveHistoryTasks(ctx context.Context, taskIDs []stri
 		_ = tx.Rollback()
 	}()
 
-	archivedStates, err := validateCompletedTasks(ctx, tx, taskIDs)
+	uniqueTaskIDs := uniqueTaskIDs(taskIDs)
+	archivedStates, err := validateCompletedTasks(ctx, tx, uniqueTaskIDs)
 	if err != nil {
 		return 0, err
 	}
 
 	updated := 0
-	for taskID, alreadyArchived := range archivedStates {
+	for _, taskID := range uniqueTaskIDs {
+		alreadyArchived := archivedStates[taskID]
 		if alreadyArchived {
 			continue
 		}
@@ -238,7 +242,7 @@ func (r *TaskRepository) ArchiveHistoryTasks(ctx context.Context, taskIDs []stri
 	return updated, nil
 }
 
-func (r *TaskRepository) UnarchiveHistoryTasks(ctx context.Context, taskIDs []string) (int, error) {
+func (r *TaskRepository) UnarchiveHistoryTasks(ctx context.Context, taskIDs []string, updatedAt time.Time) (int, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -247,21 +251,24 @@ func (r *TaskRepository) UnarchiveHistoryTasks(ctx context.Context, taskIDs []st
 		_ = tx.Rollback()
 	}()
 
-	archivedStates, err := validateCompletedTasks(ctx, tx, taskIDs)
+	uniqueTaskIDs := uniqueTaskIDs(taskIDs)
+	archivedStates, err := validateCompletedTasks(ctx, tx, uniqueTaskIDs)
 	if err != nil {
 		return 0, err
 	}
 
 	updated := 0
-	for taskID, alreadyArchived := range archivedStates {
+	for _, taskID := range uniqueTaskIDs {
+		alreadyArchived := archivedStates[taskID]
 		if !alreadyArchived {
 			continue
 		}
 		result, err := tx.ExecContext(
 			ctx,
 			`UPDATE tasks
-			SET archived_at = ''
+			SET archived_at = '', updated_at = ?
 			WHERE task_id = ? AND archived_at <> ''`,
+			formatTime(updatedAt),
 			taskID,
 		)
 		if err != nil {
@@ -277,6 +284,19 @@ func (r *TaskRepository) UnarchiveHistoryTasks(ctx context.Context, taskIDs []st
 		return 0, err
 	}
 	return updated, nil
+}
+
+func uniqueTaskIDs(taskIDs []string) []string {
+	seen := make(map[string]struct{}, len(taskIDs))
+	unique := make([]string, 0, len(taskIDs))
+	for _, taskID := range taskIDs {
+		if _, found := seen[taskID]; found {
+			continue
+		}
+		seen[taskID] = struct{}{}
+		unique = append(unique, taskID)
+	}
+	return unique
 }
 
 type taskScanner interface {
@@ -385,7 +405,7 @@ func validateCompletedTasks(ctx context.Context, tx *sql.Tx, taskIDs []string) (
 			return nil, err
 		}
 		if domain.TaskStatus(status) != domain.TaskStatusCompleted {
-			return nil, errors.New("task is not completed")
+			return nil, ErrTaskNotCompleted
 		}
 		archivedStates[taskID] = archivedAt != ""
 	}

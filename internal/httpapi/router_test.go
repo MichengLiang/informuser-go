@@ -54,6 +54,21 @@ func newTestServerWithPublisher(t *testing.T, publisher EventPublisher) http.Han
 	return NewRouter(service, publisher)
 }
 
+func newTestServerWithRepository(t *testing.T) (http.Handler, *store.TaskRepository) {
+	t.Helper()
+
+	repository, err := store.Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatalf("open repository: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = repository.Close()
+	})
+
+	service := app.NewService(repository, &fixedClock{now: time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)})
+	return NewRouter(service, nil), repository
+}
+
 func doJSON(t *testing.T, handler http.Handler, method string, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -246,6 +261,27 @@ func TestRenameSessionEndpointRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
+func TestRenameSessionEndpointReportsInternalErrorsAsServerErrors(t *testing.T) {
+	handler, repository := newTestServerWithRepository(t)
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Need review",
+		Content:   "body",
+	})
+	if err := repository.Close(); err != nil {
+		t.Fatalf("close repository: %v", err)
+	}
+
+	rename := doJSON(t, handler, http.MethodPatch, "/api/sessions/session-1", renameSessionRequest{
+		DisplayName: "Spring",
+	})
+	if rename.Code != http.StatusInternalServerError {
+		t.Fatalf("rename internal error status = %d, body = %s", rename.Code, rename.Body.String())
+	}
+}
+
 func TestHistoryArchiveEndpoints(t *testing.T) {
 	handler := newTestServer(t)
 
@@ -330,7 +366,7 @@ func TestHistoryArchiveEndpointsRejectInvalidRequests(t *testing.T) {
 	missing := doJSON(t, handler, http.MethodPost, "/api/history/unarchive", historyTasksRequest{
 		TaskIDs: []string{"missing"},
 	})
-	if missing.Code != http.StatusBadRequest {
+	if missing.Code != http.StatusNotFound {
 		t.Fatalf("missing unarchive status = %d, body = %s", missing.Code, missing.Body.String())
 	}
 
@@ -360,6 +396,38 @@ func TestHistoryArchiveEndpointsRejectInvalidRequests(t *testing.T) {
 	handler.ServeHTTP(badJSON, badJSONRequest)
 	if badJSON.Code != http.StatusBadRequest {
 		t.Fatalf("bad json archive status = %d, body = %s", badJSON.Code, badJSON.Body.String())
+	}
+}
+
+func TestHistoryArchiveEndpointsRejectBlankTaskIDsAndReportInternalErrors(t *testing.T) {
+	handler, repository := newTestServerWithRepository(t)
+
+	blank := doJSON(t, handler, http.MethodPost, "/api/history/archive", historyTasksRequest{
+		TaskIDs: []string{" \t "},
+	})
+	if blank.Code != http.StatusBadRequest {
+		t.Fatalf("blank archive status = %d, body = %s", blank.Code, blank.Body.String())
+	}
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Done",
+		Content:   "body",
+	})
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks/task-1/reply", submitReplyRequest{
+		UserInput:   "reply",
+		ReplySource: "reply_panel",
+	})
+	if err := repository.Close(); err != nil {
+		t.Fatalf("close repository: %v", err)
+	}
+
+	archive := doJSON(t, handler, http.MethodPost, "/api/history/archive", historyTasksRequest{
+		TaskIDs: []string{"task-1"},
+	})
+	if archive.Code != http.StatusInternalServerError {
+		t.Fatalf("archive internal error status = %d, body = %s", archive.Code, archive.Body.String())
 	}
 }
 

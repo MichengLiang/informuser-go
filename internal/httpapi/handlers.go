@@ -86,7 +86,11 @@ func (h *Handlers) renameSession(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("session not found"))
 			return
 		}
-		writeError(w, http.StatusBadRequest, err)
+		if app.IsValidation(err) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, newSessionDTO(session))
@@ -182,7 +186,7 @@ func (h *Handlers) archiveHistoryTasks(w http.ResponseWriter, r *http.Request) {
 
 	outcome, err := h.service.ArchiveHistoryTasks(r.Context(), request.TaskIDs)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, newHistoryTasksResponse(outcome))
@@ -196,10 +200,21 @@ func (h *Handlers) unarchiveHistoryTasks(w http.ResponseWriter, r *http.Request)
 
 	outcome, err := h.service.UnarchiveHistoryTasks(r.Context(), request.TaskIDs)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, newHistoryTasksResponse(outcome))
+}
+
+func writeServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case app.IsNotFound(err):
+		writeError(w, http.StatusNotFound, err)
+	case app.IsValidation(err):
+		writeError(w, http.StatusBadRequest, err)
+	default:
+		writeError(w, http.StatusInternalServerError, err)
+	}
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {

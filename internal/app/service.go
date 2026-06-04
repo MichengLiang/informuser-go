@@ -57,6 +57,39 @@ type HistoryTasksOutcome struct {
 	Updated int
 }
 
+var (
+	ErrValidation = errors.New("validation error")
+	ErrNotFound   = errors.New("not found")
+)
+
+type ServiceError struct {
+	Kind error
+	Err  error
+}
+
+func (e ServiceError) Error() string {
+	if e.Err == nil {
+		return e.Kind.Error()
+	}
+	return e.Err.Error()
+}
+
+func (e ServiceError) Unwrap() error {
+	return e.Err
+}
+
+func (e ServiceError) Is(target error) bool {
+	return target == e.Kind
+}
+
+func validationError(message string) error {
+	return ServiceError{Kind: ErrValidation, Err: errors.New(message)}
+}
+
+func notFoundError(message string) error {
+	return ServiceError{Kind: ErrNotFound, Err: errors.New(message)}
+}
+
 func (r SubmitReplyRequest) Validate() error {
 	return domain.ReplyRequest{
 		TaskID:      r.TaskID,
@@ -137,13 +170,16 @@ func (s *Service) SubmitReply(ctx context.Context, request SubmitReplyRequest) e
 
 func (s *Service) RenameSession(ctx context.Context, sessionID string, displayName string) (domain.Session, error) {
 	if sessionID == "" {
-		return domain.Session{}, errors.New("session_id is required")
+		return domain.Session{}, validationError("session_id is required")
 	}
 	displayName = strings.TrimSpace(displayName)
 	if displayName == "" {
-		return domain.Session{}, errors.New("display_name is required")
+		return domain.Session{}, validationError("display_name is required")
 	}
 	if err := s.repository.UpdateSessionDisplayName(ctx, sessionID, displayName, s.clock.Now()); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Session{}, notFoundError("session not found")
+		}
 		return domain.Session{}, err
 	}
 	session, found, err := s.repository.FindSession(ctx, sessionID)
@@ -151,7 +187,7 @@ func (s *Service) RenameSession(ctx context.Context, sessionID string, displayNa
 		return domain.Session{}, err
 	}
 	if !found {
-		return domain.Session{}, sql.ErrNoRows
+		return domain.Session{}, notFoundError("session not found")
 	}
 	return session, nil
 }
@@ -195,25 +231,59 @@ func (s *Service) ListArchivedHistory(ctx context.Context, limit int, offset int
 }
 
 func (s *Service) ArchiveHistoryTasks(ctx context.Context, taskIDs []string) (HistoryTasksOutcome, error) {
-	if len(taskIDs) == 0 {
-		return HistoryTasksOutcome{}, errors.New("task_ids is required")
+	taskIDs, err := normalizeTaskIDs(taskIDs)
+	if err != nil {
+		return HistoryTasksOutcome{}, err
 	}
 	updated, err := s.repository.ArchiveHistoryTasks(ctx, taskIDs, s.clock.Now())
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return HistoryTasksOutcome{}, notFoundError("task not found")
+		}
+		if errors.Is(err, store.ErrTaskNotCompleted) {
+			return HistoryTasksOutcome{}, validationError("task is not completed")
+		}
 		return HistoryTasksOutcome{}, err
 	}
 	return HistoryTasksOutcome{Updated: updated}, nil
 }
 
 func (s *Service) UnarchiveHistoryTasks(ctx context.Context, taskIDs []string) (HistoryTasksOutcome, error) {
-	if len(taskIDs) == 0 {
-		return HistoryTasksOutcome{}, errors.New("task_ids is required")
-	}
-	updated, err := s.repository.UnarchiveHistoryTasks(ctx, taskIDs)
+	taskIDs, err := normalizeTaskIDs(taskIDs)
 	if err != nil {
 		return HistoryTasksOutcome{}, err
 	}
+	updated, err := s.repository.UnarchiveHistoryTasks(ctx, taskIDs, s.clock.Now())
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return HistoryTasksOutcome{}, notFoundError("task not found")
+		}
+		if errors.Is(err, store.ErrTaskNotCompleted) {
+			return HistoryTasksOutcome{}, validationError("task is not completed")
+		}
+		return HistoryTasksOutcome{}, err
+	}
 	return HistoryTasksOutcome{Updated: updated}, nil
+}
+
+func normalizeTaskIDs(taskIDs []string) ([]string, error) {
+	if len(taskIDs) == 0 {
+		return nil, validationError("task_ids is required")
+	}
+	seen := make(map[string]struct{}, len(taskIDs))
+	unique := make([]string, 0, len(taskIDs))
+	for _, taskID := range taskIDs {
+		taskID = strings.TrimSpace(taskID)
+		if taskID == "" {
+			return nil, validationError("task_id is required")
+		}
+		if _, found := seen[taskID]; found {
+			continue
+		}
+		seen[taskID] = struct{}{}
+		unique = append(unique, taskID)
+	}
+	return unique, nil
 }
 
 func normalizeListBounds(limit int, offset int) (int, int) {
@@ -227,5 +297,9 @@ func normalizeListBounds(limit int, offset int) (int, int) {
 }
 
 func IsNotFound(err error) bool {
-	return errors.Is(err, sql.ErrNoRows)
+	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, ErrNotFound)
+}
+
+func IsValidation(err error) bool {
+	return errors.Is(err, ErrValidation)
 }
