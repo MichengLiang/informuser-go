@@ -42,24 +42,28 @@ vi.mock('@tanstack/react-virtual', () => ({
 
 describe('TaskList', () => {
   const defaultProps = {
-    selectedHistoryIds: new Set<string>(),
+    selectedIds: new Set<string>(),
     onSelectTask: vi.fn(),
     onQuickReply: vi.fn(),
-    onToggleHistorySelection: vi.fn(),
+    onToggleTaskSelection: vi.fn(),
     onRenameSession: vi.fn(),
   };
 
   function renderTaskList(props: {
     tasks: Task[];
-    mode: 'pending' | 'history';
+    mode: 'pending' | 'history' | 'archived';
     activeTaskId?: string;
-    exportMode?: boolean;
+    selectionMode?: boolean;
     submittingTaskId?: string;
-    selectedHistoryIds?: Set<string>;
+    selectedIds?: Set<string>;
     onSelectTask?: (task: Task) => void;
     onQuickReply?: (task: Task, value: string) => Promise<void>;
-    onToggleHistorySelection?: (taskId: string) => void;
+    onToggleTaskSelection?: (taskId: string) => void;
+    onToggleGroupSelection?: (sessionId: string, taskIds: string[]) => void;
     onRenameSession?: (sessionId: string, displayName: string) => Promise<void>;
+    onExportGroup?: (tasks: Task[]) => Promise<void>;
+    onArchiveGroup?: (tasks: Task[]) => Promise<void>;
+    onUnarchiveGroup?: (tasks: Task[]) => Promise<void>;
   }) {
     return render(
       <TaskList
@@ -102,10 +106,10 @@ describe('TaskList', () => {
       tasks: [currentTask],
       activeTaskId: 'task-1',
       mode: 'history',
-      exportMode: false,
-      selectedHistoryIds: new Set(['task-1']),
+      selectionMode: false,
+      selectedIds: new Set(['task-1']),
       onSelectTask,
-      onToggleHistorySelection,
+      onToggleTaskSelection: onToggleHistorySelection,
     });
 
     expect(screen.queryByPlaceholderText('Paste here to send')).not.toBeInTheDocument();
@@ -117,10 +121,10 @@ describe('TaskList', () => {
         tasks={[currentTask]}
         activeTaskId="task-1"
         mode="history"
-        exportMode={true}
-        selectedHistoryIds={new Set(['task-1'])}
+        selectionMode={true}
+        selectedIds={new Set(['task-1'])}
         onSelectTask={onSelectTask}
-        onToggleHistorySelection={onToggleHistorySelection}
+        onToggleTaskSelection={onToggleHistorySelection}
         onQuickReply={vi.fn().mockResolvedValue(undefined)}
         onRenameSession={vi.fn().mockResolvedValue(undefined)}
       />,
@@ -159,9 +163,9 @@ describe('TaskList', () => {
       tasks: [currentTask],
       activeTaskId: 'other-task',
       mode: 'history',
-      exportMode: true,
+      selectionMode: true,
       onSelectTask,
-      onToggleHistorySelection,
+      onToggleTaskSelection: onToggleHistorySelection,
     });
 
     await userEvent.click(screen.getByLabelText('Select history item'));
@@ -183,6 +187,9 @@ describe('TaskList', () => {
 
     rerender(<TaskList {...props} mode="history" />);
     expect(screen.getByText('No completed tasks')).toBeInTheDocument();
+
+    rerender(<TaskList {...props} mode="archived" />);
+    expect(screen.getByText('No archived tasks')).toBeInTheDocument();
   });
 
   it('groups pending tasks by session and shows display metadata', () => {
@@ -266,6 +273,62 @@ describe('TaskList', () => {
     expect(screen.getByRole('heading', { name: /Spring · S-AAAAA · 2/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Spring · S-BBBBB · 1/ })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Rename session' })).toHaveLength(2);
+  });
+
+  it('shows loaded group actions for main history groups', async () => {
+    const groupTask = task({
+      task_id: 'history-1',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      session_id: 'session-a',
+      session_display_name: 'Spring',
+    });
+    const onToggleGroupSelection = vi.fn();
+    const onExportGroup = vi.fn().mockResolvedValue(undefined);
+    const onArchiveGroup = vi.fn().mockResolvedValue(undefined);
+
+    renderTaskList({
+      tasks: [groupTask],
+      mode: 'history',
+      onToggleGroupSelection,
+      onExportGroup,
+      onArchiveGroup,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Select group Spring' }));
+    expect(onToggleGroupSelection).toHaveBeenCalledWith('session-a', ['history-1']);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Export group Spring' }));
+    expect(onExportGroup).toHaveBeenCalledWith([groupTask]);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Archive group Spring' }));
+    expect(onArchiveGroup).toHaveBeenCalledWith([groupTask]);
+  });
+
+  it('shows loaded group actions for archived groups', async () => {
+    const archivedTask = task({
+      task_id: 'archived-1',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      archived_at: '2026-06-05T03:00:00Z',
+      session_id: 'session-a',
+      session_display_name: 'Spring',
+    });
+    const onToggleGroupSelection = vi.fn();
+    const onUnarchiveGroup = vi.fn().mockResolvedValue(undefined);
+
+    renderTaskList({
+      tasks: [archivedTask],
+      mode: 'archived',
+      onToggleGroupSelection,
+      onUnarchiveGroup,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Select group Spring' }));
+    expect(onToggleGroupSelection).toHaveBeenCalledWith('session-a', ['archived-1']);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Restore group Spring' }));
+    expect(onUnarchiveGroup).toHaveBeenCalledWith([archivedTask]);
   });
 
   it('renames sessions inline with enter', async () => {

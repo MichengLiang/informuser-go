@@ -1,19 +1,35 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { Bell, CheckSquare, ClipboardCopy, Inbox, Radio, Shuffle, Volume2, X } from 'lucide-react';
+import {
+  Archive,
+  ArrowLeft,
+  Bell,
+  CheckSquare,
+  ClipboardCopy,
+  Inbox,
+  Radio,
+  RotateCcw,
+  Shuffle,
+  Volume2,
+  X,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { MarkdownReader, type MarkdownSettings } from './features/markdown/MarkdownReader';
 import { ReplyPanel } from './features/reply/ReplyPanel';
 import { TaskList } from './features/tasks/TaskList';
 import {
+  archiveHistoryTasks,
   connectTaskEvents,
+  fetchArchivedHistory,
   fetchHistory,
   fetchPendingTasks,
   renameSession,
   submitReply,
   type Task,
   type TaskEvent,
+  unarchiveHistoryTasks,
 } from './lib/api';
+import { formatTasksAsXML } from './lib/export';
 import './App.css';
 
 const defaultMarkdownSettings: MarkdownSettings = {
@@ -40,14 +56,18 @@ function loadJSON<T>(key: string, fallback: T): T {
 function App() {
   const [pendingTasks, setPendingTasks] = useState<Task[]>([]);
   const [historyTasks, setHistoryTasks] = useState<Task[]>([]);
+  const [archivedTasks, setArchivedTasks] = useState<Task[]>([]);
   const [activeTaskId, setActiveTaskId] = useState<string | undefined>();
   const [tab, setTab] = useState<'pending' | 'history'>('pending');
+  const [historyView, setHistoryView] = useState<'main' | 'archived'>('main');
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [error, setError] = useState<string | undefined>();
   const [submittingTaskId, setSubmittingTaskId] = useState<string | undefined>();
   const [selectedHistoryIds, setSelectedHistoryIds] = useState(() => new Set<string>());
+  const [selectedArchivedIds, setSelectedArchivedIds] = useState(() => new Set<string>());
   const [replyMode, setReplyMode] = useState(false);
-  const [historyExportMode, setHistoryExportMode] = useState(false);
+  const [historySelectionMode, setHistorySelectionMode] = useState(false);
+  const [archivedLoaded, setArchivedLoaded] = useState(false);
   const [markdownSettings, setMarkdownSettings] = useState<MarkdownSettings>(() =>
     loadJSON('askuser.markdownSettings', defaultMarkdownSettings),
   );
@@ -147,9 +167,11 @@ function App() {
   }, [notificationsEnabled, soundEnabled]);
 
   const activeTask = useMemo(() => {
-    const source = tab === 'pending' ? pendingTasks : historyTasks;
+    const source =
+      tab === 'pending' ? pendingTasks : historyView === 'archived' ? archivedTasks : historyTasks;
     return source.find((task) => task.task_id === activeTaskId) ?? source[0];
-  }, [activeTaskId, historyTasks, pendingTasks, tab]);
+  }, [activeTaskId, archivedTasks, historyTasks, historyView, pendingTasks, tab]);
+  const emptySelection = useMemo(() => new Set<string>(), []);
 
   const combinedReply = (value: string) => {
     if (!suffixEnabled || !suffix.trim()) {
@@ -176,23 +198,6 @@ function App() {
     }
   };
 
-  const exportSelected = async () => {
-    const selected = historyTasks.filter((task) => selectedHistoryIds.has(task.task_id));
-    const xml = selected
-      .slice()
-      .sort((a, b) => (a.completed_at ?? '').localeCompare(b.completed_at ?? ''))
-      .map((task, index) => {
-        const id = index + 1;
-        return `<Assistant id="${id}">\n${task.markdown}\n</Assistant>\n\n<User id="${id}">\n${
-          task.user_input ?? ''
-        }\n</User>`;
-      })
-      .join('\n\n');
-    await navigator.clipboard.writeText(xml);
-    setSelectedHistoryIds(new Set());
-    setHistoryExportMode(false);
-  };
-
   const updateLoadedSessionNames = (sessionId: string, displayName: string, autoName: string) => {
     const updateTask = (task: Task) =>
       task.session_id === sessionId
@@ -200,6 +205,7 @@ function App() {
         : task;
     setPendingTasks((tasks) => tasks.map(updateTask));
     setHistoryTasks((tasks) => tasks.map(updateTask));
+    setArchivedTasks((tasks) => tasks.map(updateTask));
   };
 
   const handleRenameSession = async (sessionId: string, displayName: string) => {
@@ -213,11 +219,152 @@ function App() {
     }
   };
 
+  const visibleHistoryTasks = historyView === 'archived' ? archivedTasks : historyTasks;
+  const selectedIds = historyView === 'archived' ? selectedArchivedIds : selectedHistoryIds;
+
+  const exportTasks = async (tasks: Task[]) => {
+    setError(undefined);
+    try {
+      await navigator.clipboard.writeText(formatTasksAsXML(tasks));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to copy history XML.');
+    }
+  };
+
+  const exportSelected = async () => {
+    const selected = historyTasks.filter((task) => selectedHistoryIds.has(task.task_id));
+    await exportTasks(selected);
+    setSelectedHistoryIds(new Set());
+    setHistorySelectionMode(false);
+  };
+
+  const archiveTasks = async (tasks: Task[]) => {
+    const taskIds = tasks.map((task) => task.task_id);
+    const removedIds = new Set(taskIds);
+    setError(undefined);
+    try {
+      await archiveHistoryTasks(taskIds);
+      setHistoryTasks((current) => current.filter((task) => !removedIds.has(task.task_id)));
+      setSelectedHistoryIds(new Set());
+      setHistorySelectionMode(false);
+      setActiveTaskId((current) =>
+        current && removedIds.has(current)
+          ? (historyTasks
+              .filter((task) => !removedIds.has(task.task_id))
+              .sort((a, b) =>
+                (b.completed_at ?? b.created_at).localeCompare(a.completed_at ?? a.created_at),
+              )[0]?.task_id ?? pendingTasks[0]?.task_id)
+          : current,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const restoreTasks = async (tasks: Task[]) => {
+    const taskIds = tasks.map((task) => task.task_id);
+    const removedIds = new Set(taskIds);
+    setError(undefined);
+    try {
+      await unarchiveHistoryTasks(taskIds);
+      setArchivedTasks((current) => current.filter((task) => !removedIds.has(task.task_id)));
+      setHistoryTasks((current) =>
+        [...tasks.map((task) => ({ ...task, archived_at: undefined })), ...current].sort((a, b) =>
+          (b.completed_at ?? b.created_at).localeCompare(a.completed_at ?? a.created_at),
+        ),
+      );
+      setSelectedArchivedIds(new Set());
+      setHistorySelectionMode(false);
+      setActiveTaskId((current) =>
+        current && removedIds.has(current)
+          ? (archivedTasks
+              .filter((task) => !removedIds.has(task.task_id))
+              .sort((a, b) =>
+                (b.archived_at ?? b.completed_at ?? b.created_at).localeCompare(
+                  a.archived_at ?? a.completed_at ?? a.created_at,
+                ),
+              )[0]?.task_id ?? pendingTasks[0]?.task_id)
+          : current,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const archiveSelected = async () => {
+    await archiveTasks(historyTasks.filter((task) => selectedHistoryIds.has(task.task_id)));
+  };
+
+  const restoreSelected = async () => {
+    await restoreTasks(archivedTasks.filter((task) => selectedArchivedIds.has(task.task_id)));
+  };
+
+  const toggleTaskSelection = (taskId: string) => {
+    const setSelected = historyView === 'archived' ? setSelectedArchivedIds : setSelectedHistoryIds;
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  };
+
+  const toggleGroupSelection = (_sessionId: string, taskIds: string[]) => {
+    const setSelected = historyView === 'archived' ? setSelectedArchivedIds : setSelectedHistoryIds;
+    setSelected((current) => {
+      const next = new Set(current);
+      const allSelected = taskIds.every((taskId) => next.has(taskId));
+      for (const taskId of taskIds) {
+        if (allSelected) {
+          next.delete(taskId);
+        } else {
+          next.add(taskId);
+        }
+      }
+      return next;
+    });
+    setHistorySelectionMode(true);
+  };
+
+  const openArchivedHistory = async () => {
+    setError(undefined);
+    setHistorySelectionMode(false);
+    setSelectedHistoryIds(new Set());
+    setSelectedArchivedIds(new Set());
+    setHistoryView('archived');
+    if (archivedLoaded) {
+      return;
+    }
+    try {
+      const archived = await fetchArchivedHistory(historyPageSize);
+      setArchivedTasks(archived);
+      setArchivedLoaded(true);
+      setActiveTaskId((current) => current ?? archived[0]?.task_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const backToMainHistory = () => {
+    setHistoryView('main');
+    setHistorySelectionMode(false);
+    setSelectedArchivedIds(new Set());
+    setActiveTaskId((current) => current ?? historyTasks[0]?.task_id);
+  };
+
   const loadMoreHistory = async () => {
     setError(undefined);
     try {
-      const nextPage = await fetchHistory(historyPageSize, historyTasks.length);
-      setHistoryTasks((current) => [...current, ...nextPage]);
+      if (historyView === 'archived') {
+        const nextPage = await fetchArchivedHistory(historyPageSize, archivedTasks.length);
+        setArchivedTasks((current) => [...current, ...nextPage]);
+      } else {
+        const nextPage = await fetchHistory(historyPageSize, historyTasks.length);
+        setHistoryTasks((current) => [...current, ...nextPage]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -236,8 +383,10 @@ function App() {
   const changeTab = (value: string) => {
     setTab(value as typeof tab);
     setReplyMode(false);
-    setHistoryExportMode(false);
+    setHistorySelectionMode(false);
+    setHistoryView('main');
     setSelectedHistoryIds(new Set());
+    setSelectedArchivedIds(new Set());
   };
 
   const selectTask = (task: Task) => {
@@ -245,24 +394,33 @@ function App() {
     setReplyMode(false);
   };
 
-  const enterHistoryExportMode = () => {
-    setHistoryExportMode(true);
-    setSelectedHistoryIds(new Set());
+  const enterHistorySelectionMode = () => {
+    setHistorySelectionMode(true);
+    if (historyView === 'archived') {
+      setSelectedArchivedIds(new Set());
+    } else {
+      setSelectedHistoryIds(new Set());
+    }
   };
 
-  const exitHistoryExportMode = () => {
-    setHistoryExportMode(false);
+  const exitHistorySelectionMode = () => {
+    setHistorySelectionMode(false);
     setSelectedHistoryIds(new Set());
+    setSelectedArchivedIds(new Set());
   };
 
   const selectAllHistory = () => {
-    setSelectedHistoryIds(new Set(historyTasks.map((task) => task.task_id)));
+    const source = historyView === 'archived' ? archivedTasks : historyTasks;
+    const setSelected = historyView === 'archived' ? setSelectedArchivedIds : setSelectedHistoryIds;
+    setSelected(new Set(source.map((task) => task.task_id)));
   };
 
   const invertHistorySelection = () => {
-    setSelectedHistoryIds((current) => {
+    const source = historyView === 'archived' ? archivedTasks : historyTasks;
+    const setSelected = historyView === 'archived' ? setSelectedArchivedIds : setSelectedHistoryIds;
+    setSelected((current) => {
       const next = new Set<string>();
-      for (const task of historyTasks) {
+      for (const task of source) {
         if (!current.has(task.task_id)) {
           next.add(task.task_id);
         }
@@ -333,20 +491,67 @@ function App() {
                   <Tabs.Trigger value="history">History</Tabs.Trigger>
                 </Tabs.List>
                 {tab === 'history' ? (
-                  <button
-                    type="button"
-                    className="tool-button"
-                    disabled={historyTasks.length === 0}
-                    onClick={enterHistoryExportMode}
-                    title="Copy selected history as XML"
-                    style={{ display: historyExportMode ? 'none' : undefined }}
-                  >
-                    <ClipboardCopy size={15} />
-                    Export
-                  </button>
+                  <div className="history-heading-actions">
+                    {historyView === 'archived' ? (
+                      <>
+                        <button
+                          type="button"
+                          className="tool-button"
+                          onClick={backToMainHistory}
+                          title="Back to main history"
+                        >
+                          <ArrowLeft size={15} />
+                          Back
+                        </button>
+                        <span className="history-view-label">Archived History</span>
+                        <button
+                          type="button"
+                          className="tool-button"
+                          disabled={archivedTasks.length === 0}
+                          onClick={enterHistorySelectionMode}
+                          title="Restore selected archived tasks"
+                        >
+                          <RotateCcw size={15} />
+                          Restore
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="tool-button"
+                          disabled={historyTasks.length === 0}
+                          onClick={enterHistorySelectionMode}
+                          title="Copy selected history as XML"
+                        >
+                          <ClipboardCopy size={15} />
+                          Export
+                        </button>
+                        <button
+                          type="button"
+                          className="tool-button"
+                          disabled={historyTasks.length === 0}
+                          onClick={enterHistorySelectionMode}
+                          title="Archive selected history"
+                        >
+                          <Archive size={15} />
+                          Archive
+                        </button>
+                        <button
+                          type="button"
+                          className="tool-button"
+                          onClick={() => void openArchivedHistory()}
+                          title="Open archived history"
+                        >
+                          <Archive size={15} />
+                          Archived
+                        </button>
+                      </>
+                    )}
+                  </div>
                 ) : null}
               </div>
-              {tab === 'history' && historyExportMode ? (
+              {tab === 'history' && historySelectionMode ? (
                 <div className="export-toolbar">
                   <div className="export-toolbar-left">
                     <button type="button" className="tool-button" onClick={selectAllHistory}>
@@ -362,13 +567,38 @@ function App() {
                     <button
                       type="button"
                       className="tool-button"
-                      disabled={selectedHistoryIds.size === 0}
+                      disabled={selectedIds.size === 0 || historyView === 'archived'}
                       onClick={() => void exportSelected()}
                     >
                       <ClipboardCopy size={15} />
-                      Copy ({selectedHistoryIds.size})
+                      Copy ({selectedIds.size})
                     </button>
-                    <button type="button" className="tool-button" onClick={exitHistoryExportMode}>
+                    {historyView === 'archived' ? (
+                      <button
+                        type="button"
+                        className="tool-button"
+                        disabled={selectedIds.size === 0}
+                        onClick={() => void restoreSelected()}
+                      >
+                        <RotateCcw size={15} />
+                        Restore ({selectedIds.size})
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="tool-button"
+                        disabled={selectedIds.size === 0}
+                        onClick={() => void archiveSelected()}
+                      >
+                        <Archive size={15} />
+                        Archive ({selectedIds.size})
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="tool-button"
+                      onClick={exitHistorySelectionMode}
+                    >
                       <X size={15} />
                       Cancel
                     </button>
@@ -381,34 +611,28 @@ function App() {
                   mode="pending"
                   activeTaskId={activeTask?.task_id}
                   submittingTaskId={submittingTaskId}
-                  selectedHistoryIds={selectedHistoryIds}
+                  selectedIds={emptySelection}
                   onSelectTask={selectTask}
                   onQuickReply={(task, value) => handleSubmit(task, value, 'quick_paste')}
                   onRenameSession={handleRenameSession}
-                  onToggleHistorySelection={() => undefined}
+                  onToggleTaskSelection={() => undefined}
                 />
               </Tabs.Content>
               <Tabs.Content value="history">
                 <TaskList
-                  tasks={historyTasks}
-                  mode="history"
-                  exportMode={historyExportMode}
+                  tasks={visibleHistoryTasks}
+                  mode={historyView === 'archived' ? 'archived' : 'history'}
+                  selectionMode={historySelectionMode}
                   activeTaskId={activeTask?.task_id}
-                  selectedHistoryIds={selectedHistoryIds}
+                  selectedIds={selectedIds}
                   onSelectTask={selectTask}
                   onQuickReply={(task, value) => handleSubmit(task, value, 'quick_paste')}
                   onRenameSession={handleRenameSession}
-                  onToggleHistorySelection={(taskId) =>
-                    setSelectedHistoryIds((current) => {
-                      const next = new Set(current);
-                      if (next.has(taskId)) {
-                        next.delete(taskId);
-                      } else {
-                        next.add(taskId);
-                      }
-                      return next;
-                    })
-                  }
+                  onToggleTaskSelection={toggleTaskSelection}
+                  onToggleGroupSelection={toggleGroupSelection}
+                  onExportGroup={exportTasks}
+                  onArchiveGroup={archiveTasks}
+                  onUnarchiveGroup={restoreTasks}
                 />
                 <div className="history-footer">
                   <button

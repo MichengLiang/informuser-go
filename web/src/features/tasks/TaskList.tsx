@@ -1,5 +1,13 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { CheckCircle2, Clock3, Pencil } from 'lucide-react';
+import {
+  Archive,
+  CheckCircle2,
+  CheckSquare,
+  ClipboardCopy,
+  Clock3,
+  Pencil,
+  RotateCcw,
+} from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from '../../lib/api';
@@ -18,21 +26,28 @@ type TaskListItem = { type: 'group'; group: TaskGroup } | { type: 'task'; task: 
 type TaskListProps = {
   tasks: Task[];
   activeTaskId?: string;
-  mode: 'pending' | 'history';
-  exportMode?: boolean;
+  mode: 'pending' | 'history' | 'archived';
+  selectionMode?: boolean;
   submittingTaskId?: string;
-  selectedHistoryIds: Set<string>;
+  selectedIds: Set<string>;
   onSelectTask: (task: Task) => void;
   onQuickReply: (task: Task, value: string) => Promise<void>;
   onRenameSession: (sessionId: string, displayName: string) => Promise<void>;
-  onToggleHistorySelection: (taskId: string) => void;
+  onToggleTaskSelection: (taskId: string) => void;
+  onToggleGroupSelection?: (sessionId: string, taskIds: string[]) => void;
+  onExportGroup?: (tasks: Task[]) => Promise<void>;
+  onArchiveGroup?: (tasks: Task[]) => Promise<void>;
+  onUnarchiveGroup?: (tasks: Task[]) => Promise<void>;
 };
 
-function taskSortTime(task: Task, mode: 'pending' | 'history') {
+function taskSortTime(task: Task, mode: 'pending' | 'history' | 'archived') {
+  if (mode === 'archived') {
+    return task.archived_at ?? task.completed_at ?? task.created_at;
+  }
   return mode === 'history' ? (task.completed_at ?? task.created_at) : task.created_at;
 }
 
-function buildTaskGroups(tasks: Task[], mode: 'pending' | 'history') {
+function buildTaskGroups(tasks: Task[], mode: 'pending' | 'history' | 'archived') {
   const groups = new Map<string, TaskGroup>();
   for (const task of tasks) {
     const latestAt = taskSortTime(task, mode);
@@ -74,13 +89,17 @@ export function TaskList({
   tasks,
   activeTaskId,
   mode,
-  exportMode = false,
+  selectionMode = false,
   submittingTaskId,
-  selectedHistoryIds,
+  selectedIds,
   onSelectTask,
   onQuickReply,
   onRenameSession,
-  onToggleHistorySelection,
+  onToggleTaskSelection,
+  onToggleGroupSelection,
+  onExportGroup,
+  onArchiveGroup,
+  onUnarchiveGroup,
 }: TaskListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const groups = useMemo(() => buildTaskGroups(tasks, mode), [tasks, mode]);
@@ -102,9 +121,19 @@ export function TaskList({
     return (
       <div className="empty-state">
         {mode === 'pending' ? <Clock3 size={34} /> : <CheckCircle2 size={34} />}
-        <strong>{mode === 'pending' ? 'No pending tasks' : 'No completed tasks'}</strong>
+        <strong>
+          {mode === 'pending'
+            ? 'No pending tasks'
+            : mode === 'archived'
+              ? 'No archived tasks'
+              : 'No completed tasks'}
+        </strong>
         <span>
-          {mode === 'pending' ? 'Waiting for agents to call AskUser.' : 'Replies will appear here.'}
+          {mode === 'pending'
+            ? 'Waiting for agents to call AskUser.'
+            : mode === 'archived'
+              ? 'Archived replies will appear here.'
+              : 'Replies will appear here.'}
         </span>
       </div>
     );
@@ -120,7 +149,12 @@ export function TaskList({
               <SessionGroupHeader
                 key={`group-${item.group.sessionId}`}
                 group={item.group}
+                mode={mode}
                 onRenameSession={onRenameSession}
+                onToggleGroupSelection={onToggleGroupSelection}
+                onExportGroup={onExportGroup}
+                onArchiveGroup={onArchiveGroup}
+                onUnarchiveGroup={onUnarchiveGroup}
                 measureElement={virtualizer.measureElement}
                 index={virtualRow.index}
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
@@ -129,7 +163,7 @@ export function TaskList({
           }
           const task = item.task;
           const selected = activeTaskId === task.task_id;
-          const historyChecked = selectedHistoryIds.has(task.task_id);
+          const checked = selectedIds.has(task.task_id);
           return (
             <div
               key={task.task_id}
@@ -145,16 +179,18 @@ export function TaskList({
                 aria-label={`Open task ${task.title}`}
               />
               <div className="task-row-header">
-                {mode === 'history' && exportMode ? (
+                {(mode === 'history' || mode === 'archived') && selectionMode ? (
                   <input
                     type="checkbox"
-                    checked={historyChecked}
+                    checked={checked}
                     onClick={(event) => event.stopPropagation()}
                     onChange={() => {
-                      onToggleHistorySelection(task.task_id);
+                      onToggleTaskSelection(task.task_id);
                       onSelectTask(task);
                     }}
-                    aria-label="Select history item"
+                    aria-label={
+                      mode === 'archived' ? 'Select archived item' : 'Select history item'
+                    }
                   />
                 ) : null}
                 <div className="task-row-select">
@@ -178,13 +214,23 @@ export function TaskList({
 
 function SessionGroupHeader({
   group,
+  mode,
   onRenameSession,
+  onToggleGroupSelection,
+  onExportGroup,
+  onArchiveGroup,
+  onUnarchiveGroup,
   measureElement,
   index,
   style,
 }: {
   group: TaskGroup;
+  mode: 'pending' | 'history' | 'archived';
   onRenameSession: (sessionId: string, displayName: string) => Promise<void>;
+  onToggleGroupSelection?: (sessionId: string, taskIds: string[]) => void;
+  onExportGroup?: (tasks: Task[]) => Promise<void>;
+  onArchiveGroup?: (tasks: Task[]) => Promise<void>;
+  onUnarchiveGroup?: (tasks: Task[]) => Promise<void>;
   measureElement?: (element: Element | null) => void;
   index: number;
   style: CSSProperties;
@@ -249,6 +295,9 @@ function SessionGroupHeader({
     }
   };
 
+  const groupTaskIds = group.tasks.map((task) => task.task_id);
+  const groupLabel = group.displayName;
+
   return (
     <div ref={measureElement} data-index={index} className="task-group-row" style={style}>
       {editing ? (
@@ -283,6 +332,59 @@ function SessionGroupHeader({
           </small>
         </h3>
       )}
+      {mode === 'history' ? (
+        <div className="task-group-actions">
+          <button
+            type="button"
+            className="icon-button task-group-action"
+            onClick={() => onToggleGroupSelection?.(group.sessionId, groupTaskIds)}
+            title="Select loaded group tasks"
+            aria-label={`Select group ${groupLabel}`}
+          >
+            <CheckSquare size={14} />
+          </button>
+          <button
+            type="button"
+            className="icon-button task-group-action"
+            onClick={() => void onExportGroup?.(group.tasks)}
+            title="Export loaded group tasks"
+            aria-label={`Export group ${groupLabel}`}
+          >
+            <ClipboardCopy size={14} />
+          </button>
+          <button
+            type="button"
+            className="icon-button task-group-action"
+            onClick={() => void onArchiveGroup?.(group.tasks)}
+            title="Archive loaded group tasks"
+            aria-label={`Archive group ${groupLabel}`}
+          >
+            <Archive size={14} />
+          </button>
+        </div>
+      ) : null}
+      {mode === 'archived' ? (
+        <div className="task-group-actions">
+          <button
+            type="button"
+            className="icon-button task-group-action"
+            onClick={() => onToggleGroupSelection?.(group.sessionId, groupTaskIds)}
+            title="Select loaded group tasks"
+            aria-label={`Select group ${groupLabel}`}
+          >
+            <CheckSquare size={14} />
+          </button>
+          <button
+            type="button"
+            className="icon-button task-group-action"
+            onClick={() => void onUnarchiveGroup?.(group.tasks)}
+            title="Restore loaded group tasks"
+            aria-label={`Restore group ${groupLabel}`}
+          >
+            <RotateCcw size={14} />
+          </button>
+        </div>
+      ) : null}
       <button
         type="button"
         className="icon-button session-rename-button"

@@ -194,6 +194,39 @@
   align-items: center;
 }
 
+.history-heading-actions,
+.export-toolbar,
+.export-toolbar-left,
+.export-toolbar-right,
+.task-group-actions {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.history-heading-actions,
+.export-toolbar-right {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.history-view-label {
+  max-width: 120px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-toolbar {
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
 .tabs-list {
   display: inline-flex;
   padding: 2px;
@@ -347,6 +380,17 @@
   width: 30px;
   min-width: 30px;
   height: 30px;
+  padding: 0;
+}
+
+.task-group-actions {
+  flex-shrink: 0;
+}
+
+.task-group-action {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
   padding: 0;
 }
 

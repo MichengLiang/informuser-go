@@ -61,6 +61,15 @@ export async function fetchHistory(limit = 80, offset = 0): Promise<Task[]> {
   return data.tasks;
 }
 
+export async function fetchArchivedHistory(limit = 80, offset = 0): Promise<Task[]> {
+  const response = await fetch(`/api/history/archived?limit=${limit}&offset=${offset}`);
+  if (!response.ok) {
+    throw await errorFromResponse(response, 'Failed to load archived history');
+  }
+  const data = (await response.json()) as ListTasksResponse;
+  return data.tasks;
+}
+
 export async function submitReply(taskId: string, userInput: string, replySource: string) {
   const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/reply`, {
     method: 'POST',
@@ -85,6 +94,30 @@ export async function renameSession(sessionId: string, displayName: string): Pro
   }
 
   return (await response.json()) as Session;
+}
+
+export async function archiveHistoryTasks(taskIds: string[]) {
+  const response = await fetch('/api/history/archive', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_ids: taskIds }),
+  });
+
+  if (!response.ok) {
+    throw await errorFromResponse(response, 'Failed to archive history tasks');
+  }
+}
+
+export async function unarchiveHistoryTasks(taskIds: string[]) {
+  const response = await fetch('/api/history/unarchive', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_ids: taskIds }),
+  });
+
+  if (!response.ok) {
+    throw await errorFromResponse(response, 'Failed to restore archived history tasks');
+  }
 }
 
 export function connectTaskEvents(
