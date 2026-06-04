@@ -202,6 +202,16 @@ function App() {
     }
   };
 
+  const copyMarkdown = async (markdown: string) => {
+    setError(undefined);
+    try {
+      await navigator.clipboard.writeText(markdown);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to copy Markdown.');
+      throw err;
+    }
+  };
+
   const changeTab = (value: string) => {
     setTab(value as typeof tab);
     setReplyMode(false);
@@ -398,6 +408,7 @@ function App() {
               settings={markdownSettings}
               onSettingsChange={setMarkdownSettings}
               onOpenReply={() => setReplyMode(true)}
+              onCopyMarkdown={copyMarkdown}
             />
 
             {replyMode ? (

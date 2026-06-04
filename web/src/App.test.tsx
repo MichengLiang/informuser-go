@@ -67,11 +67,15 @@ vi.mock('./features/markdown/MarkdownReader', () => ({
     settings,
     onSettingsChange,
     onOpenReply,
+    onCopyMarkdown,
   }: MockMarkdownReaderProps) => (
     <section data-testid="markdown-reader">
       <div>{markdown}</div>
       {userInput ? <pre>{userInput}</pre> : null}
       <div>font {settings.fontSize}</div>
+      <button type="button" onClick={() => onCopyMarkdown?.(markdown)}>
+        Copy Markdown
+      </button>
       {canReply ? (
         <button type="button" onClick={onOpenReply}>
           Open reply
@@ -139,6 +143,7 @@ type MockMarkdownReaderProps = {
   settings: MockMarkdownSettings;
   onSettingsChange: (settings: MockMarkdownSettings) => void;
   onOpenReply?: () => void;
+  onCopyMarkdown?: (markdown: string) => Promise<void>;
 };
 
 type MockReplyPanelProps = {
@@ -234,6 +239,21 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Larger text' }));
     expect(localStorage.getItem('askuser.markdownSettings')).toContain('"fontSize":18');
+  });
+
+  it('copies the active task raw Markdown from the reader toolbar', async () => {
+    apiMocks.fetchPendingTasks.mockResolvedValue([
+      task({ markdown: '# Raw task\n\nDo not render before copying.' }),
+    ]);
+    apiMocks.fetchHistory.mockResolvedValue([]);
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy Markdown' }));
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      '# Raw task\n\nDo not render before copying.',
+    );
   });
 
   it('exports selected history and loads more history', async () => {

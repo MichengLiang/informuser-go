@@ -73,4 +73,22 @@ describe('MarkdownReader', () => {
     expect(screen.getByRole('heading', { name: 'User reply' })).toBeInTheDocument();
     expect(screen.getByText(/User answered here/)).toHaveClass('history-reply-content');
   });
+
+  it('copies the raw assistant Markdown from the reader toolbar', async () => {
+    const onCopyMarkdown = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MarkdownReader
+        markdown={'# Raw source\n\n**Keep this Markdown**'}
+        userInput="Do not copy this reply"
+        settings={settings}
+        onSettingsChange={vi.fn()}
+        onCopyMarkdown={onCopyMarkdown}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /copy markdown/i }));
+
+    expect(onCopyMarkdown).toHaveBeenCalledWith('# Raw source\n\n**Keep this Markdown**');
+    expect(await screen.findByRole('button', { name: /copied/i })).toBeInTheDocument();
+  });
 });

@@ -1,5 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
-import { Eye, MessageSquareReply, SlidersHorizontal } from 'lucide-react';
+import { Check, ClipboardCopy, Eye, MessageSquareReply, SlidersHorizontal } from 'lucide-react';
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
@@ -18,6 +19,7 @@ type MarkdownReaderProps = {
   settings: MarkdownSettings;
   onSettingsChange: (settings: MarkdownSettings) => void;
   onOpenReply?: () => void;
+  onCopyMarkdown?: (markdown: string) => Promise<void>;
 };
 
 const lineHeightMap: Record<MarkdownSettings['lineHeight'], number> = {
@@ -33,7 +35,9 @@ export function MarkdownReader({
   settings,
   onSettingsChange,
   onOpenReply,
+  onCopyMarkdown,
 }: MarkdownReaderProps) {
+  const [copied, setCopied] = useState(false);
   const style = {
     '--reader-font-size': `${settings.fontSize}px`,
     '--reader-line-height': lineHeightMap[settings.lineHeight],
@@ -56,6 +60,21 @@ export function MarkdownReader({
             >
               <MessageSquareReply size={16} />
               Reply
+            </button>
+          ) : null}
+          {onCopyMarkdown ? (
+            <button
+              type="button"
+              className="tool-button"
+              onClick={async () => {
+                await onCopyMarkdown(markdown);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1400);
+              }}
+              title="Copy raw Markdown"
+            >
+              {copied ? <Check size={16} /> : <ClipboardCopy size={16} />}
+              {copied ? 'Copied' : 'Copy Markdown'}
             </button>
           ) : null}
           <button

@@ -34,6 +34,7 @@ async function createTask(request: APIRequestContext) {
 test('renders wide Markdown, opens reply mode, and shows completed user reply history', async ({
   page,
   request,
+  context,
 }) => {
   await createTask(request);
   await page.goto('/');
@@ -51,6 +52,10 @@ test('renders wide Markdown, opens reply mode, and shows completed user reply hi
   await page.getByRole('button', { name: /Reading/i }).click();
   await page.locator('.settings-popover input[type="range"]').fill('20');
   await expect(page.locator('.markdown-reader')).toHaveCSS('font-size', '20px');
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.getByRole('button', { name: /Copy Markdown/i }).click();
+  await expect(page.getByRole('button', { name: /Copied/i })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(markdown);
 
   await page.getByRole('button', { name: /^Reply$/ }).click();
   await expect(page.locator('.workspace')).toHaveClass(/reply-mode/);
