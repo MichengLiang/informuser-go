@@ -121,6 +121,8 @@ export function TaskList({
                 key={`group-${item.group.sessionId}`}
                 group={item.group}
                 onRenameSession={onRenameSession}
+                measureElement={virtualizer.measureElement}
+                index={virtualRow.index}
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               />
             );
@@ -131,6 +133,8 @@ export function TaskList({
           return (
             <div
               key={task.task_id}
+              ref={virtualizer.measureElement}
+              data-index={virtualRow.index}
               className={`task-row ${selected ? 'selected' : ''}`}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
@@ -175,10 +179,14 @@ export function TaskList({
 function SessionGroupHeader({
   group,
   onRenameSession,
+  measureElement,
+  index,
   style,
 }: {
   group: TaskGroup;
   onRenameSession: (sessionId: string, displayName: string) => Promise<void>;
+  measureElement?: (element: Element | null) => void;
+  index: number;
   style: CSSProperties;
 }) {
   const [editing, setEditing] = useState(false);
@@ -186,8 +194,14 @@ function SessionGroupHeader({
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const committedNameRef = useRef(group.displayName);
+  const closedRef = useRef(false);
+  const savingRef = useRef(false);
 
   const startEditing = () => {
+    if (savingRef.current) {
+      return;
+    }
+    closedRef.current = false;
     committedNameRef.current = group.displayName;
     setDraft(group.displayName);
     setEditing(true);
@@ -201,34 +215,42 @@ function SessionGroupHeader({
   }, [editing]);
 
   const cancelEditing = () => {
+    closedRef.current = true;
     setDraft(committedNameRef.current);
     setEditing(false);
   };
 
   const save = async () => {
+    if (closedRef.current || savingRef.current) {
+      return;
+    }
     const trimmed = draft.trim();
     if (!trimmed) {
       cancelEditing();
       return;
     }
     if (trimmed === committedNameRef.current) {
+      closedRef.current = true;
       setEditing(false);
       return;
     }
+    savingRef.current = true;
     setSaving(true);
     try {
       await onRenameSession(group.sessionId, trimmed);
+      closedRef.current = true;
       committedNameRef.current = trimmed;
       setEditing(false);
     } catch {
       // App owns the user-visible error banner; keeping edit mode preserves the draft for retry.
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   return (
-    <div className="task-group-row" style={style}>
+    <div ref={measureElement} data-index={index} className="task-group-row" style={style}>
       {editing ? (
         <input
           ref={inputRef}
