@@ -305,7 +305,7 @@ function App() {
 
         <main className={`workspace ${replyMode ? 'reply-mode' : ''}`}>
           <section className="task-panel">
-            <Tabs.Root value={tab} onValueChange={changeTab}>
+            <Tabs.Root className="task-tabs" value={tab} onValueChange={changeTab}>
               <div className="panel-heading tabs-heading">
                 <Tabs.List className="tabs-list">
                   <Tabs.Trigger value="pending">Pending</Tabs.Trigger>

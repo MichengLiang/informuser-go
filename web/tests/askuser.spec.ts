@@ -43,6 +43,24 @@ test('renders wide Markdown, opens reply mode, and shows completed user reply hi
   await expect(page.getByRole('button', { name: /Wide Markdown review/ })).toBeVisible();
   await expect(page.locator('.markdown-reader')).toContainText('Review request');
   await expect(page.locator('.reply-panel')).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const panel = document.querySelector('.task-panel');
+        const list = document.querySelector('.task-list-scroll');
+        if (!panel || !list) {
+          return false;
+        }
+        const panelStyle = window.getComputedStyle(panel);
+        const listStyle = window.getComputedStyle(list);
+        return (
+          panelStyle.overflowY === 'hidden' &&
+          panel.scrollHeight <= panel.clientHeight &&
+          (listStyle.overflowY === 'auto' || listStyle.overflowY === 'scroll')
+        );
+      }),
+    )
+    .toBeTruthy();
 
   const hasNoPageOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth <= window.innerWidth && document.body.scrollWidth <= window.innerWidth,
