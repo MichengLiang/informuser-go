@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check": "biome check .",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sync:embed": "rm -rf ../internal/webui/dist && mkdir -p ../internal/webui/dist && cp -R dist/. ../internal/webui/dist/",
+    "test:e2e": "pnpm build && pnpm sync:embed && playwright test"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -25,6 +28,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

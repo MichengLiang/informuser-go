@@ -1,0 +1,13 @@
+# Local runtime state
+tmp/
+*.db
+*.db-shm
+*.db-wal
+
+# Local Go build outputs
+/popupd
+/popup-mcp
+
+# Playwright artifacts
+web/test-results/
+web/playwright-report/

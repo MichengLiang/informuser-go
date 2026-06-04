@@ -1,6 +1,6 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { ClipboardCopy, Inbox, Radio } from 'lucide-react';
+import { Bell, ClipboardCopy, Inbox, Radio, Volume2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { MarkdownReader, type MarkdownSettings } from './features/markdown/MarkdownReader';
 import { ReplyPanel } from './features/reply/ReplyPanel';
@@ -21,6 +21,8 @@ const defaultMarkdownSettings: MarkdownSettings = {
   contentWidth: 'reading',
   raw: false,
 };
+
+const historyPageSize = 80;
 
 function loadJSON<T>(key: string, fallback: T): T {
   const value = localStorage.getItem(key);
@@ -50,6 +52,12 @@ function App() {
     () => localStorage.getItem('askuser.suffix.enabled') === 'true',
   );
   const [suffix, setSuffix] = useState(() => localStorage.getItem('askuser.suffix.value') ?? '');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(
+    () => localStorage.getItem('askuser.notifications.enabled') === 'true',
+  );
+  const [soundEnabled, setSoundEnabled] = useState(
+    () => localStorage.getItem('askuser.sound.enabled') === 'true',
+  );
 
   useEffect(() => {
     localStorage.setItem('askuser.markdownSettings', JSON.stringify(markdownSettings));
@@ -64,9 +72,20 @@ function App() {
   }, [suffix]);
 
   useEffect(() => {
+    localStorage.setItem('askuser.notifications.enabled', String(notificationsEnabled));
+  }, [notificationsEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('askuser.sound.enabled', String(soundEnabled));
+  }, [soundEnabled]);
+
+  useEffect(() => {
     const load = async () => {
       try {
-        const [pending, history] = await Promise.all([fetchPendingTasks(), fetchHistory()]);
+        const [pending, history] = await Promise.all([
+          fetchPendingTasks(),
+          fetchHistory(historyPageSize),
+        ]);
         setPendingTasks(pending);
         setHistoryTasks(history);
         setActiveTaskId(pending[0]?.task_id ?? history[0]?.task_id);
@@ -78,6 +97,29 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const alertNewTask = (task: Task) => {
+      if (
+        notificationsEnabled &&
+        'Notification' in window &&
+        Notification.permission === 'granted'
+      ) {
+        new Notification('AskUser Popup', { body: task.title });
+      }
+      if (soundEnabled) {
+        // The browser workbench stays web-only, so a tiny generated tone gives an
+        // optional "popup" cue without adding a native desktop shell or asset file.
+        const audio = new AudioContext();
+        const oscillator = audio.createOscillator();
+        const gain = audio.createGain();
+        oscillator.frequency.value = 740;
+        gain.gain.value = 0.05;
+        oscillator.connect(gain);
+        gain.connect(audio.destination);
+        oscillator.start();
+        oscillator.stop(audio.currentTime + 0.12);
+      }
+    };
+
     const applyEvent = async (event: TaskEvent) => {
       if (event.type === 'task_created') {
         setPendingTasks((tasks) => [
@@ -85,19 +127,20 @@ function App() {
           ...tasks.filter((task) => task.task_id !== event.task.task_id),
         ]);
         setActiveTaskId((current) => current ?? event.task.task_id);
+        alertNewTask(event.task);
       }
       if (event.type === 'task_completed' || event.type === 'task_cancelled') {
         const taskId = event.task_id;
         setPendingTasks((tasks) => tasks.filter((task) => task.task_id !== taskId));
         localStorage.removeItem(`askuser.drafts.${taskId}`);
-        setHistoryTasks(await fetchHistory());
+        setHistoryTasks(await fetchHistory(historyPageSize));
       }
     };
 
     return connectTaskEvents((event) => {
       void applyEvent(event);
     }, setConnectionStatus);
-  }, []);
+  }, [notificationsEnabled, soundEnabled]);
 
   const activeTask = useMemo(() => {
     const source = tab === 'pending' ? pendingTasks : historyTasks;
@@ -120,7 +163,7 @@ function App() {
       await submitReply(task.task_id, combinedReply(value), source);
       setPendingTasks((tasks) => tasks.filter((item) => item.task_id !== task.task_id));
       localStorage.removeItem(`askuser.drafts.${task.task_id}`);
-      setHistoryTasks(await fetchHistory());
+      setHistoryTasks(await fetchHistory(historyPageSize));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -144,6 +187,31 @@ function App() {
     setSelectedHistoryIds(new Set());
   };
 
+  const loadMoreHistory = async () => {
+    setError(undefined);
+    try {
+      const nextPage = await fetchHistory(historyPageSize, historyTasks.length);
+      setHistoryTasks((current) => [...current, ...nextPage]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const toggleNotifications = async () => {
+    if (
+      !notificationsEnabled &&
+      'Notification' in window &&
+      Notification.permission !== 'granted'
+    ) {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setError('Browser notification permission was not granted.');
+        return;
+      }
+    }
+    setNotificationsEnabled((enabled) => !enabled);
+  };
+
   return (
     <Tooltip.Provider>
       <div className="app-shell">
@@ -161,6 +229,22 @@ function App() {
               <Inbox size={14} />
               {pendingTasks.length} pending
             </span>
+            <button
+              type="button"
+              className={`status-button ${notificationsEnabled ? 'enabled' : ''}`}
+              onClick={() => void toggleNotifications()}
+              title="Toggle browser notifications"
+            >
+              <Bell size={14} />
+            </button>
+            <button
+              type="button"
+              className={`status-button ${soundEnabled ? 'enabled' : ''}`}
+              onClick={() => setSoundEnabled((enabled) => !enabled)}
+              title="Toggle sound cue"
+            >
+              <Volume2 size={14} />
+            </button>
           </div>
         </header>
 
@@ -219,6 +303,15 @@ function App() {
                     })
                   }
                 />
+                <div className="history-footer">
+                  <button
+                    type="button"
+                    className="tool-button"
+                    onClick={() => void loadMoreHistory()}
+                  >
+                    Load more
+                  </button>
+                </div>
               </Tabs.Content>
             </Tabs.Root>
           </section>

@@ -46,6 +46,25 @@
   font-size: 12px;
 }
 
+.status-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.status-button.enabled {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface-selected);
+}
+
 .status-pill.connected {
   color: var(--success);
 }
@@ -251,6 +270,14 @@
   gap: 8px;
   color: var(--text-muted);
   text-align: center;
+}
+
+.history-footer {
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-subtle);
 }
 
 .reader {

@@ -50,86 +50,86 @@ react-markdown, remark-gfm, rehype-sanitize, lucide-react.
 - [x] Rename the default branch to `main`.
 - [x] Save the approved design to `docs/approved-design.md`.
 - [x] Save this implementation plan to `docs/implementation-plan.md`.
-- [ ] Commit the documentation baseline.
+- [x] Commit the documentation baseline.
 
 ## Task 2: Go Module and Domain Model
 
-- [ ] Initialize Go module `github.com/t103o/informuser-go`.
-- [ ] Add domain tests for task statuses and result states.
-- [ ] Verify the tests fail before implementation.
-- [ ] Implement `internal/domain/task.go` and `event.go`.
-- [ ] Run targeted tests, then commit.
+- [x] Initialize Go module `github.com/t103o/informuser-go`.
+- [x] Add domain tests for task statuses and result states.
+- [x] Verify the tests fail before implementation.
+- [x] Implement `internal/domain/task.go` and `event.go`.
+- [x] Run targeted tests, then commit.
 
 ## Task 3: SQLite Store
 
-- [ ] Add repository tests for create, duplicate task id, completed lookup,
+- [x] Add repository tests for create, duplicate task id, completed lookup,
   pending session uniqueness, supersede, submit reply, cancel, pending list, and
   paginated history.
-- [ ] Verify repository tests fail before implementation.
-- [ ] Add `modernc.org/sqlite`.
-- [ ] Implement schema, connection setup, and repository methods.
-- [ ] Run store tests, then commit.
+- [x] Verify repository tests fail before implementation.
+- [x] Add `modernc.org/sqlite`.
+- [x] Implement schema, connection setup, and repository methods.
+- [x] Run store tests, then commit.
 
 ## Task 4: Application Service
 
-- [ ] Add service tests for idempotent create, session supersede, reply,
+- [x] Add service tests for idempotent create, session supersede, reply,
   polling result, pending list, history list, and cancel.
-- [ ] Verify service tests fail before implementation.
-- [ ] Implement application service methods.
-- [ ] Run app tests, then commit.
+- [x] Verify service tests fail before implementation.
+- [x] Implement application service methods.
+- [x] Run app tests, then commit.
 
 ## Task 5: HTTP API and WebSocket Hub
 
-- [ ] Add `httptest` coverage for all API endpoints.
-- [ ] Add hub tests for event subscription and stale connection cleanup where
+- [x] Add `httptest` coverage for all API endpoints.
+- [x] Add hub tests for event subscription and stale connection cleanup where
   practical.
-- [ ] Verify tests fail before implementation.
-- [ ] Add chi and coder/websocket.
-- [ ] Implement router, DTOs, handlers, and hub.
-- [ ] Run HTTP tests, then commit.
+- [x] Verify tests fail before implementation.
+- [x] Add chi and coder/websocket.
+- [x] Implement router, DTOs, handlers, and hub.
+- [x] Run HTTP tests, then commit.
 
 ## Task 6: MCP Bridge
 
-- [ ] Add tests for daemon registration retry, no-timeout polling, found result,
+- [x] Add tests for daemon registration retry, no-timeout polling, found result,
   and cancellation using `httptest`.
-- [ ] Verify tests fail before implementation.
-- [ ] Add official MCP Go SDK.
-- [ ] Implement daemon HTTP client, polling loop, and `AskUser` tool server.
-- [ ] Run MCP bridge tests, then commit.
+- [x] Verify tests fail before implementation.
+- [x] Add official MCP Go SDK.
+- [x] Implement daemon HTTP client, polling loop, and `AskUser` tool server.
+- [x] Run MCP bridge tests, then commit.
 
 ## Task 7: Frontend Scaffold
 
-- [ ] Create Vite React TypeScript app under `web/`.
-- [ ] Add Biome configuration.
-- [ ] Add Radix, TanStack Virtual, react-markdown, remark-gfm, rehype-sanitize,
+- [x] Create Vite React TypeScript app under `web/`.
+- [x] Add Biome configuration.
+- [x] Add Radix, TanStack Virtual, react-markdown, remark-gfm, rehype-sanitize,
   and lucide-react.
-- [ ] Replace starter UI with the AskUser app shell.
-- [ ] Run `pnpm --dir web biome check .` and `pnpm --dir web build`, then commit.
+- [x] Replace starter UI with the AskUser app shell.
+- [x] Run `pnpm --dir web biome check .` and `pnpm --dir web build`, then commit.
 
 ## Task 8: Frontend Task Flow
 
-- [ ] Implement API client and WebSocket event client.
-- [ ] Implement pending/history task state.
-- [ ] Implement virtualized task list.
-- [ ] Implement quick paste submit-on-paste with comments explaining its role.
-- [ ] Implement full reply panel, suffix, drafts, and Ctrl+Enter.
-- [ ] Run frontend checks, then commit.
+- [x] Implement API client and WebSocket event client.
+- [x] Implement pending/history task state.
+- [x] Implement virtualized task list.
+- [x] Implement quick paste submit-on-paste with comments explaining its role.
+- [x] Implement full reply panel, suffix, drafts, and Ctrl+Enter.
+- [x] Run frontend checks, then commit.
 
 ## Task 9: Markdown Reader and Export
 
-- [ ] Implement safe Markdown reader with raw/render toggle.
-- [ ] Implement font size, line height, content width, and code size settings.
-- [ ] Implement long-token, wide-table, and code-block overflow boundaries.
-- [ ] Implement history selection and XML copy export.
-- [ ] Run frontend checks, then commit.
+- [x] Implement safe Markdown reader with raw/render toggle.
+- [x] Implement font size, line height, content width, and code size settings.
+- [x] Implement long-token, wide-table, and code-block overflow boundaries.
+- [x] Implement history selection and XML copy export.
+- [x] Run frontend checks, then commit.
 
 ## Task 10: Integrated Build and Browser Verification
 
-- [ ] Embed frontend build output in `popupd`.
-- [ ] Add README usage and MCP config examples.
-- [ ] Add Playwright smoke tests for core flows and layout overflow.
-- [ ] Run `go test ./...`.
-- [ ] Run `pnpm --dir web biome check .`.
-- [ ] Run `pnpm --dir web build`.
-- [ ] Run Playwright tests.
-- [ ] Commit final integration.
+- [x] Embed frontend build output in `popupd`.
+- [x] Add README usage and MCP config examples.
+- [x] Add Playwright smoke tests for core flows and layout overflow.
+- [x] Run `go test ./...`.
+- [x] Run `pnpm --dir web biome check .`.
+- [x] Run `pnpm --dir web build`.
+- [x] Run Playwright tests.
+- [x] Commit final integration.
