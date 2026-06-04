@@ -15,7 +15,7 @@ const defaultDaemonURL = "http://127.0.0.1:8765"
 
 type askUserInput struct {
 	Abstract string `json:"abstract" jsonschema:"Short summary shown in the task list and browser title area."`
-	Content  string `json:"content" jsonschema:"Markdown body shown in the browser workbench."`
+	Content  string `json:"content" jsonschema:"回复给用户的内容，应优先使用 Markdown 语法，例如标题等等给用户良好的排版，提升阅读体验。"`
 }
 
 func main() {
@@ -44,7 +44,7 @@ func run(ctx context.Context) error {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "AskUser",
 		Title:       "Ask User",
-		Description: "Send a Markdown question to the local AskUser Popup browser workbench and wait for the user's reply.",
+		Description: "调用此工具可以向用户桌面发起一个弹窗，并等待用户回复。",
 	}, func(ctx context.Context, request *mcp.CallToolRequest, input askUserInput) (*mcp.CallToolResult, any, error) {
 		taskID := uuid.NewString()
 		registration := mcpbridge.TaskRegistration{
