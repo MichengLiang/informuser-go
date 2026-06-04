@@ -9,12 +9,27 @@ The implementation plan is in [docs/implementation-plan.md](docs/implementation-
 
 ## Run
 
-Build the web UI into the embedded daemon assets:
+Build the web UI into the embedded daemon assets and compile both Go binaries:
+
+```bash
+./scripts/build_all.py
+```
+
+The binaries are written to:
+
+```text
+bin/popupd
+bin/popup-mcp
+```
+
+Manual build steps:
 
 ```bash
 pnpm --dir web install
 pnpm --dir web build
 pnpm --dir web sync:embed
+go build -o bin/popupd ./cmd/popupd
+go build -o bin/popup-mcp ./cmd/popup-mcp
 ```
 
 Start the local daemon:
