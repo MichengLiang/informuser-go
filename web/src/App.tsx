@@ -295,21 +295,30 @@ function App() {
     setError(undefined);
     try {
       await unarchiveHistoryTasks(taskIds);
-      const refreshedHistory = await fetchHistory(historyPageSize);
       const nextArchivedTasks = archivedTasksRef.current.filter(
         (task) => !removedIds.has(task.task_id),
       );
-      setHistoryTasks(refreshedHistory);
-      historyTasksRef.current = refreshedHistory;
       setArchivedTasks(nextArchivedTasks);
       archivedTasksRef.current = nextArchivedTasks;
       setSelectedArchivedIds(new Set());
       setHistorySelectionMode(false);
       setActiveTaskId((current) =>
         current && removedIds.has(current)
-          ? ((historyViewRef.current === 'archived'
-              ? nextArchivedTasks[0]?.task_id
-              : refreshedHistory[0]?.task_id) ?? pendingTasksRef.current[0]?.task_id)
+          ? (nextArchivedTasks[0]?.task_id ?? pendingTasksRef.current[0]?.task_id)
+          : current,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return;
+    }
+
+    try {
+      const refreshedHistory = await fetchHistory(historyPageSize);
+      setHistoryTasks(refreshedHistory);
+      historyTasksRef.current = refreshedHistory;
+      setActiveTaskId((current) =>
+        historyViewRef.current !== 'archived' && current && removedIds.has(current)
+          ? (refreshedHistory[0]?.task_id ?? pendingTasksRef.current[0]?.task_id)
           : current,
       );
     } catch (err) {

@@ -973,6 +973,47 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('removes restored archived rows when refreshing main history fails', async () => {
+    const restored = task({
+      task_id: 'archived-restored',
+      title: 'Restored archived',
+      markdown: 'restored archived markdown',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      archived_at: '2026-06-05T04:00:00Z',
+    });
+    const remaining = task({
+      task_id: 'archived-remaining',
+      title: 'Remaining archived',
+      markdown: 'remaining archived markdown',
+      status: 'completed',
+      completed_at: '2026-06-05T01:00:00Z',
+      archived_at: '2026-06-05T03:00:00Z',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([]);
+    apiMocks.fetchHistory
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('history refresh failed'));
+    apiMocks.fetchArchivedHistory.mockResolvedValue([restored, remaining]);
+    apiMocks.unarchiveHistoryTasks.mockResolvedValue(undefined);
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
+    await userEvent.click(screen.getByTitle('Open archived history'));
+    expect(await screen.findByText('restored archived markdown')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    const archivedList = await screen.findByTestId('task-list-archived');
+    await userEvent.click(within(archivedList).getByLabelText('Select archived archived-restored'));
+    await userEvent.click(screen.getByRole('button', { name: 'Restore (1)' }));
+
+    expect(await screen.findByText('history refresh failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('archived-archived-restored')).not.toBeInTheDocument();
+    expect(screen.getByTestId('archived-archived-remaining')).toBeInTheDocument();
+    expect(screen.getByText('remaining archived markdown')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Restore (1)' })).not.toBeInTheDocument();
+  });
+
   it('selects all, inverts, and surfaces restore errors without removing archived history', async () => {
     const first = task({
       task_id: 'archived-1',
