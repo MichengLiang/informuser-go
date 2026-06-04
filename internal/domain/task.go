@@ -19,17 +19,17 @@ func (s TaskStatus) String() string {
 }
 
 type Task struct {
-	TaskID       string
-	SessionID    string
-	Title        string
-	Markdown     string
-	Status       TaskStatus
-	UserInput    string
-	ReplySource  string
-	CancelReason string
-	CreatedAt    time.Time
-	CompletedAt  time.Time
-	UpdatedAt    time.Time
+	TaskID       string     `json:"task_id"`
+	SessionID    string     `json:"session_id"`
+	Title        string     `json:"title"`
+	Markdown     string     `json:"markdown"`
+	Status       TaskStatus `json:"status"`
+	UserInput    string     `json:"user_input,omitempty"`
+	ReplySource  string     `json:"reply_source,omitempty"`
+	CancelReason string     `json:"cancel_reason,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	CompletedAt  time.Time  `json:"completed_at,omitempty"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 type CreateTaskRequest struct {

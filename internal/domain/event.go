@@ -11,11 +11,11 @@ const (
 )
 
 type TaskEvent struct {
-	Type        EventType
-	Task        Task
-	TaskID      string
-	SessionID   string
-	CompletedAt time.Time
+	Type        EventType `json:"type"`
+	Task        Task      `json:"task,omitempty"`
+	TaskID      string    `json:"task_id,omitempty"`
+	SessionID   string    `json:"session_id,omitempty"`
+	CompletedAt time.Time `json:"completed_at,omitempty"`
 }
 
 func NewTaskCreatedEvent(task Task) TaskEvent {
