@@ -2,6 +2,7 @@ package mcpbridge
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -41,6 +42,9 @@ func (w Waiter) WaitForReply(ctx context.Context, registration TaskRegistration)
 		if err == nil {
 			break
 		}
+		if !isRetryableRegistrationError(err) {
+			return "", err
+		}
 		// The popup daemon is a local companion process. Retrying preserves the
 		// human checkpoint when the MCP server starts before the browser daemon.
 		if err := sleep(ctx, registerDelay); err != nil {
@@ -63,6 +67,14 @@ func (w Waiter) WaitForReply(ctx context.Context, registration TaskRegistration)
 			return result.UserInput, nil
 		}
 	}
+}
+
+func isRetryableRegistrationError(err error) bool {
+	var statusErr HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		return true
+	}
+	return statusErr.StatusCode == 408 || statusErr.StatusCode == 429 || statusErr.StatusCode >= 500
 }
 
 func sleepContext(ctx context.Context, duration time.Duration) error {

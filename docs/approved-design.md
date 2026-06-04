@@ -267,7 +267,7 @@ Comments are required where code alone does not explain the product reason:
 Required verification before completion:
 
 - `go test ./...`
-- `pnpm --dir web biome check .`
+- `pnpm --dir web check`
 - `pnpm --dir web build`
 - Playwright checks for desktop, narrow viewport, long Markdown, wide tables,
   long code blocks, quick paste, full reply, and history scrolling.

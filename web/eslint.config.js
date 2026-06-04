@@ -18,5 +18,11 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // TanStack Virtual intentionally returns functions that React Compiler
+      // cannot memoize safely. The task list keeps the hook local and does not
+      // pass those functions into memoized children, so this warning is noise.
+      'react-hooks/incompatible-library': 'off',
+    },
   },
 ])

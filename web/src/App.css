@@ -214,19 +214,34 @@
   border-radius: 0;
   background: transparent;
   color: var(--text);
-  cursor: pointer;
   text-align: left;
 }
 
-.task-row:hover,
 .task-row.selected {
   background: var(--surface-selected);
+}
+
+.task-row:hover {
+  background: var(--surface-subtle);
 }
 
 .task-row-header {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+}
+
+.task-row-select {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
 }
 
 .task-row-header strong {

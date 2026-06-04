@@ -26,6 +26,15 @@ type DaemonClient struct {
 	httpClient *http.Client
 }
 
+type HTTPStatusError struct {
+	Operation  string
+	StatusCode int
+}
+
+func (e HTTPStatusError) Error() string {
+	return fmt.Sprintf("%s failed: status %d", e.Operation, e.StatusCode)
+}
+
 func NewDaemonClient(baseURL string, httpClient *http.Client) *DaemonClient {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -73,7 +82,7 @@ func (c *DaemonClient) RegisterTask(ctx context.Context, registration TaskRegist
 	defer response.Body.Close()
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("register task failed: status %d", response.StatusCode)
+		return HTTPStatusError{Operation: "register task", StatusCode: response.StatusCode}
 	}
 	return nil
 }
@@ -96,7 +105,7 @@ func (c *DaemonClient) TaskResult(ctx context.Context, taskID string) (TaskReply
 	defer response.Body.Close()
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return TaskReply{}, fmt.Errorf("poll task result failed: status %d", response.StatusCode)
+		return TaskReply{}, HTTPStatusError{Operation: "poll task result", StatusCode: response.StatusCode}
 	}
 
 	var payload taskResultPayload

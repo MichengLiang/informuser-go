@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,6 +121,49 @@ func TestWaitForReplyRetriesRegistrationAndPollsUntilFound(t *testing.T) {
 	}
 	if registerCalls != 2 || resultCalls != 2 {
 		t.Fatalf("registerCalls=%d resultCalls=%d", registerCalls, resultCalls)
+	}
+}
+
+func TestWaitForReplyDoesNotRetryPermanentRegistrationError(t *testing.T) {
+	registerCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/tasks" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		registerCalls++
+		http.Error(w, "bad task", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := NewDaemonClient(server.URL, server.Client())
+	slept := false
+	waiter := Waiter{
+		Client:        client,
+		RegisterDelay: time.Nanosecond,
+		PollInterval:  time.Nanosecond,
+		Sleep: func(ctx context.Context, d time.Duration) error {
+			slept = true
+			return context.Canceled
+		},
+	}
+
+	_, err := waiter.WaitForReply(context.Background(), TaskRegistration{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Need review",
+		Content:   "# Review",
+	})
+	if err == nil {
+		t.Fatal("permanent registration error returned nil")
+	}
+	if !strings.Contains(err.Error(), "status 400") {
+		t.Fatalf("error = %v, want status 400", err)
+	}
+	if registerCalls != 1 {
+		t.Fatalf("registerCalls = %d, want 1", registerCalls)
+	}
+	if slept {
+		t.Fatal("waiter slept after permanent registration error")
 	}
 }
 

@@ -104,7 +104,7 @@ react-markdown, remark-gfm, rehype-sanitize, lucide-react.
 - [x] Add Radix, TanStack Virtual, react-markdown, remark-gfm, rehype-sanitize,
   and lucide-react.
 - [x] Replace starter UI with the AskUser app shell.
-- [x] Run `pnpm --dir web biome check .` and `pnpm --dir web build`, then commit.
+- [x] Run `pnpm --dir web check` and `pnpm --dir web build`, then commit.
 
 ## Task 8: Frontend Task Flow
 
@@ -129,7 +129,7 @@ react-markdown, remark-gfm, rehype-sanitize, lucide-react.
 - [x] Add README usage and MCP config examples.
 - [x] Add Playwright smoke tests for core flows and layout overflow.
 - [x] Run `go test ./...`.
-- [x] Run `pnpm --dir web biome check .`.
+- [x] Run `pnpm --dir web check`.
 - [x] Run `pnpm --dir web build`.
 - [x] Run Playwright tests.
 - [x] Commit final integration.

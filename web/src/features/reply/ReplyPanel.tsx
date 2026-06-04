@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
 import { Send, Settings2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { Task } from '../../lib/api';
 
 type ReplyPanelProps = {
@@ -20,19 +20,20 @@ export function ReplyPanel({
   onSuffixChange,
   onSubmit,
 }: ReplyPanelProps) {
-  const [draft, setDraft] = useState('');
+  const [draftState, setDraftState] = useState<{ taskId?: string; value: string }>({
+    value: '',
+  });
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!task) {
-      setDraft('');
-      return;
-    }
-    setDraft(localStorage.getItem(`askuser.drafts.${task.task_id}`) ?? '');
-  }, [task]);
+  const draft =
+    task && draftState.taskId === task.task_id
+      ? draftState.value
+      : task
+        ? (localStorage.getItem(`askuser.drafts.${task.task_id}`) ?? '')
+        : '';
 
   const updateDraft = (value: string) => {
-    setDraft(value);
+    setDraftState({ taskId: task?.task_id, value });
     if (task) {
       localStorage.setItem(`askuser.drafts.${task.task_id}`, value);
     }
@@ -46,7 +47,7 @@ export function ReplyPanel({
     try {
       await onSubmit(task, draft, 'reply_panel');
       localStorage.removeItem(`askuser.drafts.${task.task_id}`);
-      setDraft('');
+      setDraftState({ taskId: task.task_id, value: '' });
     } finally {
       setSubmitting(false);
     }

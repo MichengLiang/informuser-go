@@ -44,6 +44,12 @@ Build or run the stdio MCP server:
 go run ./cmd/popup-mcp
 ```
 
+Build a binary for MCP client configuration:
+
+```bash
+go build -o popup-mcp ./cmd/popup-mcp
+```
+
 Example MCP configuration:
 
 ```json
@@ -67,6 +73,7 @@ ASKUSER_DAEMON_URL=http://127.0.0.1:8765
 ```bash
 go test ./...
 pnpm --dir web check
+pnpm --dir web lint
 pnpm --dir web build
 pnpm --dir web sync:embed
 pnpm --dir web test:e2e

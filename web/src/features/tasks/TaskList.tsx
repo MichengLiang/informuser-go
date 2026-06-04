@@ -53,38 +53,39 @@ export function TaskList({
           const selected = activeTaskId === task.task_id;
           const historyChecked = selectedHistoryIds.has(task.task_id);
           return (
-            <button
-              type="button"
+            <div
               key={task.task_id}
               className={`task-row ${selected ? 'selected' : ''}`}
               style={{ transform: `translateY(${virtualRow.start}px)` }}
-              onClick={() => {
-                if (mode === 'history') {
-                  onToggleHistorySelection(task.task_id);
-                }
-                onSelectTask(task);
-              }}
             >
               <div className="task-row-header">
                 {mode === 'history' ? (
                   <input
                     type="checkbox"
                     checked={historyChecked}
-                    onChange={() => onToggleHistorySelection(task.task_id)}
-                    onClick={(event) => event.stopPropagation()}
+                    onChange={() => {
+                      onToggleHistorySelection(task.task_id);
+                      onSelectTask(task);
+                    }}
                     aria-label="Select history item"
                   />
                 ) : null}
-                <strong>{task.title}</strong>
+                <button
+                  type="button"
+                  className="task-row-select"
+                  onClick={() => onSelectTask(task)}
+                >
+                  <strong>{task.title}</strong>
+                  <time>{new Date(task.completed_at || task.created_at).toLocaleString()}</time>
+                </button>
               </div>
-              <time>{new Date(task.completed_at || task.created_at).toLocaleString()}</time>
               {mode === 'pending' ? (
                 <QuickPasteReply
                   disabled={submittingTaskId === task.task_id}
                   onReply={(value) => onQuickReply(task, value)}
                 />
               ) : null}
-            </button>
+            </div>
           );
         })}
       </div>

@@ -34,6 +34,7 @@ func run(ctx context.Context) error {
 	waiter := mcpbridge.Waiter{
 		Client: mcpbridge.NewDaemonClient(daemonURL, http.DefaultClient),
 	}
+	fallbackSessionID := "session-" + uuid.NewString()
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "popup",
@@ -44,11 +45,11 @@ func run(ctx context.Context) error {
 		Name:        "AskUser",
 		Title:       "Ask User",
 		Description: "Send a Markdown question to the local AskUser Popup browser workbench and wait for the user's reply.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, input askUserInput) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, request *mcp.CallToolRequest, input askUserInput) (*mcp.CallToolResult, any, error) {
 		taskID := uuid.NewString()
 		registration := mcpbridge.TaskRegistration{
 			TaskID:    taskID,
-			SessionID: "session-" + taskID,
+			SessionID: sessionIDForRequest(request, fallbackSessionID),
 			Abstract:  input.Abstract,
 			Content:   input.Content,
 		}
@@ -65,4 +66,13 @@ func run(ctx context.Context) error {
 	})
 
 	return server.Run(ctx, &mcp.StdioTransport{})
+}
+
+func sessionIDForRequest(request *mcp.CallToolRequest, fallbackSessionID string) string {
+	if request != nil && request.Session != nil {
+		if sessionID := request.Session.ID(); sessionID != "" {
+			return sessionID
+		}
+	}
+	return fallbackSessionID
 }
