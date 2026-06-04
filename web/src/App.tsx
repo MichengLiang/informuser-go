@@ -13,7 +13,7 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownReader, type MarkdownSettings } from './features/markdown/MarkdownReader';
 import { ReplyPanel } from './features/reply/ReplyPanel';
 import { TaskList } from './features/tasks/TaskList';
@@ -81,6 +81,26 @@ function App() {
   const [soundEnabled, setSoundEnabled] = useState(
     () => localStorage.getItem('askuser.sound.enabled') === 'true',
   );
+  const pendingTasksRef = useRef<Task[]>([]);
+  const historyTasksRef = useRef<Task[]>([]);
+  const archivedTasksRef = useRef<Task[]>([]);
+  const historyViewRef = useRef<'main' | 'archived'>('main');
+
+  useEffect(() => {
+    pendingTasksRef.current = pendingTasks;
+  }, [pendingTasks]);
+
+  useEffect(() => {
+    historyTasksRef.current = historyTasks;
+  }, [historyTasks]);
+
+  useEffect(() => {
+    archivedTasksRef.current = archivedTasks;
+  }, [archivedTasks]);
+
+  useEffect(() => {
+    historyViewRef.current = historyView;
+  }, [historyView]);
 
   useEffect(() => {
     localStorage.setItem('askuser.markdownSettings', JSON.stringify(markdownSettings));
@@ -226,14 +246,19 @@ function App() {
     setError(undefined);
     try {
       await navigator.clipboard.writeText(formatTasksAsXML(tasks));
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to copy history XML.');
+      return false;
     }
   };
 
   const exportSelected = async () => {
     const selected = historyTasks.filter((task) => selectedHistoryIds.has(task.task_id));
-    await exportTasks(selected);
+    const copied = await exportTasks(selected);
+    if (!copied) {
+      return;
+    }
     setSelectedHistoryIds(new Set());
     setHistorySelectionMode(false);
   };
@@ -244,17 +269,19 @@ function App() {
     setError(undefined);
     try {
       await archiveHistoryTasks(taskIds);
-      setHistoryTasks((current) => current.filter((task) => !removedIds.has(task.task_id)));
+      const nextHistoryTasks = historyTasksRef.current.filter(
+        (task) => !removedIds.has(task.task_id),
+      );
+      setHistoryTasks(nextHistoryTasks);
+      historyTasksRef.current = nextHistoryTasks;
       setArchivedLoaded(false);
+      setArchivedTasks([]);
+      archivedTasksRef.current = [];
       setSelectedHistoryIds(new Set());
       setHistorySelectionMode(false);
       setActiveTaskId((current) =>
         current && removedIds.has(current)
-          ? (historyTasks
-              .filter((task) => !removedIds.has(task.task_id))
-              .sort((a, b) =>
-                (b.completed_at ?? b.created_at).localeCompare(a.completed_at ?? a.created_at),
-              )[0]?.task_id ?? pendingTasks[0]?.task_id)
+          ? (nextHistoryTasks[0]?.task_id ?? pendingTasksRef.current[0]?.task_id)
           : current,
       );
     } catch (err) {
@@ -268,23 +295,21 @@ function App() {
     setError(undefined);
     try {
       await unarchiveHistoryTasks(taskIds);
-      setArchivedTasks((current) => current.filter((task) => !removedIds.has(task.task_id)));
-      setHistoryTasks((current) =>
-        [...tasks.map((task) => ({ ...task, archived_at: undefined })), ...current].sort((a, b) =>
-          (b.completed_at ?? b.created_at).localeCompare(a.completed_at ?? a.created_at),
-        ),
+      const refreshedHistory = await fetchHistory(historyPageSize);
+      const nextArchivedTasks = archivedTasksRef.current.filter(
+        (task) => !removedIds.has(task.task_id),
       );
+      setHistoryTasks(refreshedHistory);
+      historyTasksRef.current = refreshedHistory;
+      setArchivedTasks(nextArchivedTasks);
+      archivedTasksRef.current = nextArchivedTasks;
       setSelectedArchivedIds(new Set());
       setHistorySelectionMode(false);
       setActiveTaskId((current) =>
         current && removedIds.has(current)
-          ? (archivedTasks
-              .filter((task) => !removedIds.has(task.task_id))
-              .sort((a, b) =>
-                (b.archived_at ?? b.completed_at ?? b.created_at).localeCompare(
-                  a.archived_at ?? a.completed_at ?? a.created_at,
-                ),
-              )[0]?.task_id ?? pendingTasks[0]?.task_id)
+          ? ((historyViewRef.current === 'archived'
+              ? nextArchivedTasks[0]?.task_id
+              : refreshedHistory[0]?.task_id) ?? pendingTasksRef.current[0]?.task_id)
           : current,
       );
     } catch (err) {
@@ -631,7 +656,9 @@ function App() {
                   onRenameSession={handleRenameSession}
                   onToggleTaskSelection={toggleTaskSelection}
                   onToggleGroupSelection={toggleGroupSelection}
-                  onExportGroup={exportTasks}
+                  onExportGroup={async (tasks) => {
+                    await exportTasks(tasks);
+                  }}
                   onArchiveGroup={archiveTasks}
                   onUnarchiveGroup={restoreTasks}
                 />

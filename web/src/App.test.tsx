@@ -632,6 +632,34 @@ describe('App', () => {
     expect(screen.getByTestId('history-history-1')).toBeInTheDocument();
   });
 
+  it('keeps selected history items selected when copying XML fails', async () => {
+    const history = task({
+      task_id: 'history-1',
+      title: 'History one',
+      markdown: 'assistant one',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      user_input: 'user one',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([]);
+    apiMocks.fetchHistory.mockResolvedValue([history]);
+    Object.assign(navigator, {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('copy failed')) },
+    });
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
+    await userEvent.click(screen.getByTitle('Copy selected history as XML'));
+    const historyList = screen.getByTestId('task-list-history');
+    await userEvent.click(within(historyList).getByLabelText('Select history history-1'));
+    await userEvent.click(screen.getByRole('button', { name: 'Copy (1)' }));
+
+    expect(await screen.findByText('copy failed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy (1)' })).toBeInTheDocument();
+    expect(within(historyList).getByLabelText('Select history history-1')).toBeChecked();
+  });
+
   it('loads archived history only after entering the secondary view and paginates it', async () => {
     const archived = task({
       task_id: 'archived-1',
@@ -733,6 +761,51 @@ describe('App', () => {
     );
   });
 
+  it('clears stale archived history rows after archive before a failed archived refresh', async () => {
+    const history = task({
+      task_id: 'history-new-archive',
+      title: 'New archive candidate',
+      status: 'completed',
+      completed_at: '2026-06-05T05:00:00Z',
+      user_input: 'newly archived reply',
+      session_id: 'session-new',
+      session_display_name: 'New Session',
+      session_auto_name: 'S-NEW1',
+    });
+    const archivedBefore = task({
+      task_id: 'archived-before',
+      title: 'Archived before',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      archived_at: '2026-06-05T04:00:00Z',
+      session_id: 'session-old',
+      session_display_name: 'Old Archive',
+      session_auto_name: 'S-OLD1',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([]);
+    apiMocks.fetchHistory.mockResolvedValue([history]);
+    apiMocks.fetchArchivedHistory
+      .mockResolvedValueOnce([archivedBefore])
+      .mockRejectedValueOnce(new Error('archived refresh failed'));
+    apiMocks.archiveHistoryTasks.mockResolvedValue(undefined);
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
+    await userEvent.click(screen.getByTitle('Open archived history'));
+    expect(await screen.findByTestId('archived-archived-before')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Back/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Archive group session-new' }));
+    await waitFor(() =>
+      expect(apiMocks.archiveHistoryTasks).toHaveBeenCalledWith(['history-new-archive']),
+    );
+    await userEvent.click(screen.getByTitle('Open archived history'));
+
+    expect(await screen.findByText('archived refresh failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('archived-archived-before')).not.toBeInTheDocument();
+  });
+
   it('restores selected and grouped archived history tasks', async () => {
     const first = task({
       task_id: 'archived-1',
@@ -779,6 +852,55 @@ describe('App', () => {
       expect(apiMocks.unarchiveHistoryTasks).toHaveBeenLastCalledWith(['archived-2']),
     );
     expect(screen.queryByTestId('archived-archived-2')).not.toBeInTheDocument();
+  });
+
+  it('refetches and replaces main history after restoring archived tasks', async () => {
+    const staleHistory = task({
+      task_id: 'history-stale',
+      title: 'Stale history',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      user_input: 'stale reply',
+    });
+    const archived = task({
+      task_id: 'archived-1',
+      title: 'Archived one',
+      status: 'completed',
+      completed_at: '2026-06-05T03:00:00Z',
+      archived_at: '2026-06-05T04:00:00Z',
+      user_input: 'restored reply',
+    });
+    const restoredFromServer = {
+      ...archived,
+      task_id: 'restored-from-server',
+      title: 'Restored from server',
+      archived_at: undefined,
+    };
+    apiMocks.fetchPendingTasks.mockResolvedValue([]);
+    apiMocks.fetchHistory
+      .mockResolvedValueOnce([staleHistory])
+      .mockResolvedValueOnce([restoredFromServer])
+      .mockResolvedValueOnce([]);
+    apiMocks.fetchArchivedHistory.mockResolvedValue([archived]);
+    apiMocks.unarchiveHistoryTasks.mockResolvedValue(undefined);
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
+    expect(await screen.findByTestId('history-history-stale')).toBeInTheDocument();
+    await userEvent.click(screen.getByTitle('Open archived history'));
+    await userEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    const archivedList = await screen.findByTestId('task-list-archived');
+    await userEvent.click(within(archivedList).getByLabelText('Select archived archived-1'));
+    await userEvent.click(screen.getByRole('button', { name: 'Restore (1)' }));
+
+    await waitFor(() => expect(apiMocks.fetchHistory).toHaveBeenLastCalledWith(80));
+    await userEvent.click(screen.getByRole('button', { name: /Back/ }));
+    expect(screen.queryByTestId('history-history-stale')).not.toBeInTheDocument();
+    expect(screen.getByTestId('history-restored-from-server')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await waitFor(() => expect(apiMocks.fetchHistory).toHaveBeenLastCalledWith(80, 1));
   });
 
   it('falls back to the next visible archived task after restoring the active item', async () => {
