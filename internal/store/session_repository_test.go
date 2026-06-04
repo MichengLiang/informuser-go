@@ -280,4 +280,80 @@ task_id, session_id, title, markdown, status, created_at, updated_at
 	if task.SessionDisplayName != session.DisplayName || task.SessionAutoName != session.AutoName {
 		t.Fatalf("task session fields = %#v, session = %#v", task, session)
 	}
+	if !task.ArchivedAt.IsZero() {
+		t.Fatalf("legacy task archived_at = %s, want zero", task.ArchivedAt)
+	}
+}
+
+func TestOpenMigratesPreArchiveSchemaWithCompletedTaskAsActiveHistory(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "legacy-history.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy sqlite: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE tasks (
+  task_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  markdown TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'completed', 'cancelled')),
+  user_input TEXT NOT NULL DEFAULT '',
+  reply_source TEXT NOT NULL DEFAULT '',
+  cancel_reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  completed_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX idx_tasks_pending_session
+ON tasks(session_id)
+WHERE status = 'pending';
+CREATE INDEX idx_tasks_status_created
+ON tasks(status, created_at DESC);
+CREATE INDEX idx_tasks_completed_at
+ON tasks(completed_at DESC);
+`); err != nil {
+		_ = db.Close()
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	createdAt := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	completedAt := createdAt.Add(time.Minute)
+	if _, err := db.ExecContext(ctx, `INSERT INTO tasks (
+task_id, session_id, title, markdown, status, user_input, created_at, completed_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-completed", "session-legacy", "Legacy", "body", domain.TaskStatusCompleted.String(),
+		"reply", formatTime(createdAt), formatTime(completedAt), formatTime(completedAt),
+	); err != nil {
+		_ = db.Close()
+		t.Fatalf("insert completed legacy task: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy sqlite: %v", err)
+	}
+
+	repository, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open migrated repository: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := repository.Close(); err != nil {
+			t.Fatalf("close repository: %v", err)
+		}
+	})
+
+	history, err := repository.ListHistory(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("list history: %v", err)
+	}
+	if len(history) != 1 || history[0].TaskID != "task-completed" || !history[0].ArchivedAt.IsZero() {
+		t.Fatalf("active history = %#v", history)
+	}
+	archived, err := repository.ListArchivedHistory(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("list archived history: %v", err)
+	}
+	if len(archived) != 0 {
+		t.Fatalf("archived history = %#v, want empty", archived)
+	}
 }

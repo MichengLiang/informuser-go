@@ -290,3 +290,99 @@ func TestListPendingAndHistory(t *testing.T) {
 		t.Fatalf("history session display fields should be populated: %#v", history[0])
 	}
 }
+
+func TestArchiveAndUnarchiveHistoryTasks(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	completedAt := now.Add(time.Minute)
+	archivedAt := completedAt.Add(time.Minute)
+
+	if _, err := repository.EnsureSession(ctx, "session-1", now); err != nil {
+		t.Fatalf("ensure session: %v", err)
+	}
+	if err := repository.InsertTask(ctx, sampleTask("task-1", "session-1", now)); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+	if err := repository.CompleteTask(ctx, "task-1", "reply", "reply_panel", completedAt); err != nil {
+		t.Fatalf("complete task: %v", err)
+	}
+
+	updated, err := repository.ArchiveHistoryTasks(ctx, []string{"task-1"}, archivedAt)
+	if err != nil {
+		t.Fatalf("archive task: %v", err)
+	}
+	if updated != 1 {
+		t.Fatalf("archive updated = %d, want 1", updated)
+	}
+	history, err := repository.ListHistory(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("list history: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("active history = %#v, want empty", history)
+	}
+	archived, err := repository.ListArchivedHistory(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("list archived history: %v", err)
+	}
+	if len(archived) != 1 || archived[0].TaskID != "task-1" || !archived[0].ArchivedAt.Equal(archivedAt) {
+		t.Fatalf("archived history = %#v", archived)
+	}
+
+	updated, err = repository.ArchiveHistoryTasks(ctx, []string{"task-1"}, archivedAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("repeat archive task: %v", err)
+	}
+	if updated != 0 {
+		t.Fatalf("repeat archive updated = %d, want 0", updated)
+	}
+
+	updated, err = repository.UnarchiveHistoryTasks(ctx, []string{"task-1"})
+	if err != nil {
+		t.Fatalf("unarchive task: %v", err)
+	}
+	if updated != 1 {
+		t.Fatalf("unarchive updated = %d, want 1", updated)
+	}
+	history, err = repository.ListHistory(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("list restored history: %v", err)
+	}
+	if len(history) != 1 || history[0].TaskID != "task-1" || !history[0].ArchivedAt.IsZero() {
+		t.Fatalf("restored history = %#v", history)
+	}
+
+	updated, err = repository.UnarchiveHistoryTasks(ctx, []string{"task-1"})
+	if err != nil {
+		t.Fatalf("repeat unarchive task: %v", err)
+	}
+	if updated != 0 {
+		t.Fatalf("repeat unarchive updated = %d, want 0", updated)
+	}
+}
+
+func TestArchiveAndUnarchiveRejectMissingAndNonCompletedTasks(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+
+	if err := repository.InsertTask(ctx, sampleTask("pending-task", "session-1", now)); err != nil {
+		t.Fatalf("insert pending task: %v", err)
+	}
+	if err := repository.InsertTask(ctx, sampleTask("cancelled-task", "session-2", now)); err != nil {
+		t.Fatalf("insert cancelled task: %v", err)
+	}
+	if err := repository.CancelTask(ctx, "cancelled-task", "manual_cancel", now.Add(time.Minute)); err != nil {
+		t.Fatalf("cancel task: %v", err)
+	}
+
+	for _, ids := range [][]string{{"missing-task"}, {"pending-task"}, {"cancelled-task"}} {
+		if _, err := repository.ArchiveHistoryTasks(ctx, ids, now.Add(time.Hour)); err == nil {
+			t.Fatalf("archive ids %v returned nil error", ids)
+		}
+		if _, err := repository.UnarchiveHistoryTasks(ctx, ids); err == nil {
+			t.Fatalf("unarchive ids %v returned nil error", ids)
+		}
+	}
+}

@@ -31,6 +31,7 @@ type Task struct {
 	CancelReason       string     `json:"cancel_reason,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	CompletedAt        time.Time  `json:"completed_at,omitempty"`
+	ArchivedAt         time.Time  `json:"archived_at,omitempty"`
 	UpdatedAt          time.Time  `json:"updated_at"`
 }
 

@@ -74,6 +74,24 @@ func (h *Handlers) taskResult(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, newTaskResultResponse(result))
 }
 
+func (h *Handlers) renameSession(w http.ResponseWriter, r *http.Request) {
+	var request renameSessionRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+
+	session, err := h.service.RenameSession(r.Context(), chi.URLParam(r, "session_id"), request.DisplayName)
+	if err != nil {
+		if app.IsNotFound(err) {
+			writeError(w, http.StatusNotFound, errors.New("session not found"))
+			return
+		}
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newSessionDTO(session))
+}
+
 func (h *Handlers) submitReply(w http.ResponseWriter, r *http.Request) {
 	var request submitReplyRequest
 	if !decodeJSON(w, r, &request) {
@@ -142,6 +160,46 @@ func (h *Handlers) listHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, newListTasksResponse(tasks))
+}
+
+func (h *Handlers) listArchivedHistory(w http.ResponseWriter, r *http.Request) {
+	limit := parseIntDefault(r.URL.Query().Get("limit"), 50)
+	offset := parseIntDefault(r.URL.Query().Get("offset"), 0)
+
+	tasks, err := h.service.ListArchivedHistory(r.Context(), limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newListTasksResponse(tasks))
+}
+
+func (h *Handlers) archiveHistoryTasks(w http.ResponseWriter, r *http.Request) {
+	var request historyTasksRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+
+	outcome, err := h.service.ArchiveHistoryTasks(r.Context(), request.TaskIDs)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newHistoryTasksResponse(outcome))
+}
+
+func (h *Handlers) unarchiveHistoryTasks(w http.ResponseWriter, r *http.Request) {
+	var request historyTasksRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+
+	outcome, err := h.service.UnarchiveHistoryTasks(r.Context(), request.TaskIDs)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newHistoryTasksResponse(outcome))
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {

@@ -182,6 +182,187 @@ func TestPendingAndHistoryEndpoints(t *testing.T) {
 	}
 }
 
+func TestRenameSessionEndpoint(t *testing.T) {
+	handler := newTestServer(t)
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Need review",
+		Content:   "body",
+	})
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-2",
+		SessionID: "session-2",
+		Abstract:  "Need review",
+		Content:   "body",
+	})
+
+	rename := doJSON(t, handler, http.MethodPatch, "/api/sessions/session-1", renameSessionRequest{
+		DisplayName: "  Spring  ",
+	})
+	if rename.Code != http.StatusOK {
+		t.Fatalf("rename status = %d, body = %s", rename.Code, rename.Body.String())
+	}
+	body := decodeBody[sessionDTO](t, rename)
+	if body.SessionID != "session-1" || body.DisplayName != "Spring" || body.AutoName == "" {
+		t.Fatalf("rename body = %#v", body)
+	}
+
+	duplicate := doJSON(t, handler, http.MethodPatch, "/api/sessions/session-2", renameSessionRequest{
+		DisplayName: "Spring",
+	})
+	if duplicate.Code != http.StatusOK {
+		t.Fatalf("duplicate rename status = %d, body = %s", duplicate.Code, duplicate.Body.String())
+	}
+	duplicateBody := decodeBody[sessionDTO](t, duplicate)
+	if duplicateBody.DisplayName != "Spring" || duplicateBody.SessionID != "session-2" {
+		t.Fatalf("duplicate rename body = %#v", duplicateBody)
+	}
+}
+
+func TestRenameSessionEndpointRejectsInvalidRequests(t *testing.T) {
+	handler := newTestServer(t)
+
+	blank := doJSON(t, handler, http.MethodPatch, "/api/sessions/session-1", renameSessionRequest{
+		DisplayName: " \n\t ",
+	})
+	if blank.Code != http.StatusBadRequest {
+		t.Fatalf("blank rename status = %d, body = %s", blank.Code, blank.Body.String())
+	}
+
+	missing := doJSON(t, handler, http.MethodPatch, "/api/sessions/missing-session", renameSessionRequest{
+		DisplayName: "Spring",
+	})
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing rename status = %d, body = %s", missing.Code, missing.Body.String())
+	}
+
+	badJSONRequest := httptest.NewRequest(http.MethodPatch, "/api/sessions/session-1", bytes.NewBufferString("{"))
+	badJSON := httptest.NewRecorder()
+	handler.ServeHTTP(badJSON, badJSONRequest)
+	if badJSON.Code != http.StatusBadRequest {
+		t.Fatalf("bad json rename status = %d, body = %s", badJSON.Code, badJSON.Body.String())
+	}
+}
+
+func TestHistoryArchiveEndpoints(t *testing.T) {
+	handler := newTestServer(t)
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Done",
+		Content:   "body",
+	})
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks/task-1/reply", submitReplyRequest{
+		UserInput:   "reply",
+		ReplySource: "reply_panel",
+	})
+
+	archive := doJSON(t, handler, http.MethodPost, "/api/history/archive", historyTasksRequest{
+		TaskIDs: []string{"task-1"},
+	})
+	if archive.Code != http.StatusOK {
+		t.Fatalf("archive status = %d, body = %s", archive.Code, archive.Body.String())
+	}
+	archiveBody := decodeBody[historyTasksResponse](t, archive)
+	if archiveBody.Status != "ok" || archiveBody.Updated != 1 {
+		t.Fatalf("archive body = %#v", archiveBody)
+	}
+
+	history := doJSON(t, handler, http.MethodGet, "/api/history?limit=10&offset=0", nil)
+	historyBody := decodeBody[listTasksResponse](t, history)
+	if len(historyBody.Tasks) != 0 {
+		t.Fatalf("active history body = %#v, want no tasks", historyBody)
+	}
+
+	archived := doJSON(t, handler, http.MethodGet, "/api/history/archived?limit=10&offset=0", nil)
+	if archived.Code != http.StatusOK {
+		t.Fatalf("archived status = %d, body = %s", archived.Code, archived.Body.String())
+	}
+	archivedBody := decodeBody[listTasksResponse](t, archived)
+	if len(archivedBody.Tasks) != 1 || archivedBody.Tasks[0].TaskID != "task-1" || archivedBody.Tasks[0].ArchivedAt == "" {
+		t.Fatalf("archived body = %#v", archivedBody)
+	}
+
+	repeatArchive := doJSON(t, handler, http.MethodPost, "/api/history/archive", historyTasksRequest{
+		TaskIDs: []string{"task-1"},
+	})
+	repeatArchiveBody := decodeBody[historyTasksResponse](t, repeatArchive)
+	if repeatArchive.Code != http.StatusOK || repeatArchiveBody.Updated != 0 {
+		t.Fatalf("repeat archive status = %d, body = %#v", repeatArchive.Code, repeatArchiveBody)
+	}
+
+	unarchive := doJSON(t, handler, http.MethodPost, "/api/history/unarchive", historyTasksRequest{
+		TaskIDs: []string{"task-1"},
+	})
+	if unarchive.Code != http.StatusOK {
+		t.Fatalf("unarchive status = %d, body = %s", unarchive.Code, unarchive.Body.String())
+	}
+	unarchiveBody := decodeBody[historyTasksResponse](t, unarchive)
+	if unarchiveBody.Status != "ok" || unarchiveBody.Updated != 1 {
+		t.Fatalf("unarchive body = %#v", unarchiveBody)
+	}
+
+	restored := doJSON(t, handler, http.MethodGet, "/api/history?limit=10&offset=0", nil)
+	restoredBody := decodeBody[listTasksResponse](t, restored)
+	if len(restoredBody.Tasks) != 1 || restoredBody.Tasks[0].TaskID != "task-1" || restoredBody.Tasks[0].ArchivedAt != "" {
+		t.Fatalf("restored history body = %#v", restoredBody)
+	}
+
+	repeatUnarchive := doJSON(t, handler, http.MethodPost, "/api/history/unarchive", historyTasksRequest{
+		TaskIDs: []string{"task-1"},
+	})
+	repeatUnarchiveBody := decodeBody[historyTasksResponse](t, repeatUnarchive)
+	if repeatUnarchive.Code != http.StatusOK || repeatUnarchiveBody.Updated != 0 {
+		t.Fatalf("repeat unarchive status = %d, body = %#v", repeatUnarchive.Code, repeatUnarchiveBody)
+	}
+}
+
+func TestHistoryArchiveEndpointsRejectInvalidRequests(t *testing.T) {
+	handler := newTestServer(t)
+
+	empty := doJSON(t, handler, http.MethodPost, "/api/history/archive", historyTasksRequest{})
+	if empty.Code != http.StatusBadRequest {
+		t.Fatalf("empty archive status = %d, body = %s", empty.Code, empty.Body.String())
+	}
+	missing := doJSON(t, handler, http.MethodPost, "/api/history/unarchive", historyTasksRequest{
+		TaskIDs: []string{"missing"},
+	})
+	if missing.Code != http.StatusBadRequest {
+		t.Fatalf("missing unarchive status = %d, body = %s", missing.Code, missing.Body.String())
+	}
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "pending-task",
+		SessionID: "session-1",
+		Abstract:  "Pending",
+		Content:   "body",
+	})
+	pending := doJSON(t, handler, http.MethodPost, "/api/history/archive", historyTasksRequest{
+		TaskIDs: []string{"pending-task"},
+	})
+	if pending.Code != http.StatusBadRequest {
+		t.Fatalf("pending archive status = %d, body = %s", pending.Code, pending.Body.String())
+	}
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks/pending-task/cancel", nil)
+	cancelled := doJSON(t, handler, http.MethodPost, "/api/history/unarchive", historyTasksRequest{
+		TaskIDs: []string{"pending-task"},
+	})
+	if cancelled.Code != http.StatusBadRequest {
+		t.Fatalf("cancelled unarchive status = %d, body = %s", cancelled.Code, cancelled.Body.String())
+	}
+
+	badJSONRequest := httptest.NewRequest(http.MethodPost, "/api/history/archive", bytes.NewBufferString("{"))
+	badJSON := httptest.NewRecorder()
+	handler.ServeHTTP(badJSON, badJSONRequest)
+	if badJSON.Code != http.StatusBadRequest {
+		t.Fatalf("bad json archive status = %d, body = %s", badJSON.Code, badJSON.Body.String())
+	}
+}
+
 func TestHealthEndpoint(t *testing.T) {
 	handler := newTestServer(t)
 

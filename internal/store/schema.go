@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   cancel_reason TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   completed_at TEXT NOT NULL DEFAULT '',
+  archived_at TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL
 );
 

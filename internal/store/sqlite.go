@@ -23,6 +23,10 @@ func Open(ctx context.Context, dataSourceName string) (*TaskRepository, error) {
 	}
 
 	repository := &TaskRepository{db: db}
+	if err := repository.EnsureArchiveMigration(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := repository.BackfillSessions(ctx); err != nil {
 		_ = db.Close()
 		return nil, err

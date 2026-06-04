@@ -115,6 +115,56 @@ func TestCreateTaskDoesNotOverwriteRenamedSessionDisplayName(t *testing.T) {
 	}
 }
 
+func TestRenameSessionUpdatesDisplayNameAndAllowsDuplicates(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t)
+
+	if _, err := service.CreateTask(ctx, domain.CreateTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Title:     "Need review",
+		Markdown:  "body",
+	}); err != nil {
+		t.Fatalf("create first task: %v", err)
+	}
+	if _, err := service.CreateTask(ctx, domain.CreateTaskRequest{
+		TaskID:    "task-2",
+		SessionID: "session-2",
+		Title:     "Need review",
+		Markdown:  "body",
+	}); err != nil {
+		t.Fatalf("create second task: %v", err)
+	}
+
+	first, err := service.RenameSession(ctx, "session-1", "  Spring  ")
+	if err != nil {
+		t.Fatalf("rename first session: %v", err)
+	}
+	second, err := service.RenameSession(ctx, "session-2", "Spring")
+	if err != nil {
+		t.Fatalf("rename second session: %v", err)
+	}
+
+	if first.DisplayName != "Spring" || second.DisplayName != "Spring" {
+		t.Fatalf("renamed sessions = %#v and %#v, want duplicate display names", first, second)
+	}
+	if first.SessionID == second.SessionID {
+		t.Fatalf("distinct sessions should remain distinct: %#v and %#v", first, second)
+	}
+}
+
+func TestRenameSessionRejectsBlankAndMissingSession(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t)
+
+	if _, err := service.RenameSession(ctx, "session-1", " \t\n "); err == nil {
+		t.Fatal("blank display name returned nil error")
+	}
+	if _, err := service.RenameSession(ctx, "missing-session", "Spring"); !IsNotFound(err) {
+		t.Fatalf("rename missing session err = %v, want not found", err)
+	}
+}
+
 func TestCreateTaskIsIdempotentForExistingPendingTaskID(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService(t)
@@ -389,6 +439,123 @@ func TestListHistoryNormalizesBounds(t *testing.T) {
 	}
 	if len(history) != 1 || history[0].TaskID != "task-1" {
 		t.Fatalf("history = %#v", history)
+	}
+}
+
+func TestArchiveAndUnarchiveHistoryTasksMoveCompletedTasksBetweenHistoryViews(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t)
+
+	if _, err := service.CreateTask(ctx, domain.CreateTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Title:     "Complete me",
+		Markdown:  "body",
+	}); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := service.SubmitReply(ctx, SubmitReplyRequest{
+		TaskID:      "task-1",
+		UserInput:   "reply",
+		ReplySource: "reply_panel",
+	}); err != nil {
+		t.Fatalf("submit reply: %v", err)
+	}
+
+	archive, err := service.ArchiveHistoryTasks(ctx, []string{"task-1"})
+	if err != nil {
+		t.Fatalf("archive task: %v", err)
+	}
+	if archive.Updated != 1 {
+		t.Fatalf("archive updated = %d, want 1", archive.Updated)
+	}
+	history, err := service.ListHistory(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("list history: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("active history = %#v, want empty", history)
+	}
+	archived, err := service.ListArchivedHistory(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("list archived history: %v", err)
+	}
+	if len(archived) != 1 || archived[0].TaskID != "task-1" || archived[0].ArchivedAt.IsZero() {
+		t.Fatalf("archived history = %#v", archived)
+	}
+
+	repeatArchive, err := service.ArchiveHistoryTasks(ctx, []string{"task-1"})
+	if err != nil {
+		t.Fatalf("repeat archive task: %v", err)
+	}
+	if repeatArchive.Updated != 0 {
+		t.Fatalf("repeat archive updated = %d, want 0", repeatArchive.Updated)
+	}
+
+	restore, err := service.UnarchiveHistoryTasks(ctx, []string{"task-1"})
+	if err != nil {
+		t.Fatalf("unarchive task: %v", err)
+	}
+	if restore.Updated != 1 {
+		t.Fatalf("unarchive updated = %d, want 1", restore.Updated)
+	}
+	history, err = service.ListHistory(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("list restored history: %v", err)
+	}
+	if len(history) != 1 || history[0].TaskID != "task-1" || !history[0].ArchivedAt.IsZero() {
+		t.Fatalf("restored history = %#v", history)
+	}
+
+	repeatRestore, err := service.UnarchiveHistoryTasks(ctx, []string{"task-1"})
+	if err != nil {
+		t.Fatalf("repeat unarchive task: %v", err)
+	}
+	if repeatRestore.Updated != 0 {
+		t.Fatalf("repeat unarchive updated = %d, want 0", repeatRestore.Updated)
+	}
+}
+
+func TestArchiveAndUnarchiveRejectInvalidTaskSets(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t)
+
+	if _, err := service.ArchiveHistoryTasks(ctx, nil); err == nil {
+		t.Fatal("archive empty task ids returned nil error")
+	}
+	if _, err := service.UnarchiveHistoryTasks(ctx, nil); err == nil {
+		t.Fatal("unarchive empty task ids returned nil error")
+	}
+	if _, err := service.ArchiveHistoryTasks(ctx, []string{"missing"}); err == nil {
+		t.Fatal("archive missing task returned nil error")
+	}
+	if _, err := service.UnarchiveHistoryTasks(ctx, []string{"missing"}); err == nil {
+		t.Fatal("unarchive missing task returned nil error")
+	}
+
+	if _, err := service.CreateTask(ctx, domain.CreateTaskRequest{
+		TaskID:    "pending-task",
+		SessionID: "session-1",
+		Title:     "Pending",
+		Markdown:  "body",
+	}); err != nil {
+		t.Fatalf("create pending task: %v", err)
+	}
+	if _, err := service.ArchiveHistoryTasks(ctx, []string{"pending-task"}); err == nil {
+		t.Fatal("archive pending task returned nil error")
+	}
+	if _, err := service.UnarchiveHistoryTasks(ctx, []string{"pending-task"}); err == nil {
+		t.Fatal("unarchive pending task returned nil error")
+	}
+
+	if err := service.CancelTask(ctx, "pending-task", "manual_cancel"); err != nil {
+		t.Fatalf("cancel pending task: %v", err)
+	}
+	if _, err := service.ArchiveHistoryTasks(ctx, []string{"pending-task"}); err == nil {
+		t.Fatal("archive cancelled task returned nil error")
+	}
+	if _, err := service.UnarchiveHistoryTasks(ctx, []string{"pending-task"}); err == nil {
+		t.Fatal("unarchive cancelled task returned nil error")
 	}
 }
 

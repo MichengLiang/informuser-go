@@ -26,7 +26,11 @@ func NewRouter(
 	router.Get("/api/tasks/{task_id}/result", handlers.taskResult)
 	router.Post("/api/tasks/{task_id}/reply", handlers.submitReply)
 	router.Post("/api/tasks/{task_id}/cancel", handlers.cancelTask)
+	router.Patch("/api/sessions/{session_id}", handlers.renameSession)
 	router.Get("/api/history", handlers.listHistory)
+	router.Get("/api/history/archived", handlers.listArchivedHistory)
+	router.Post("/api/history/archive", handlers.archiveHistoryTasks)
+	router.Post("/api/history/unarchive", handlers.unarchiveHistoryTasks)
 	if len(eventHandler) > 0 && eventHandler[0] != nil {
 		router.Handle("/api/events/ws", eventHandler[0])
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/t103o/informuser-go/internal/domain"
@@ -50,6 +51,10 @@ type SubmitReplyRequest struct {
 	TaskID      string
 	UserInput   string
 	ReplySource string
+}
+
+type HistoryTasksOutcome struct {
+	Updated int
 }
 
 func (r SubmitReplyRequest) Validate() error {
@@ -130,6 +135,27 @@ func (s *Service) SubmitReply(ctx context.Context, request SubmitReplyRequest) e
 	return s.repository.CompleteTask(ctx, request.TaskID, request.UserInput, request.ReplySource, s.clock.Now())
 }
 
+func (s *Service) RenameSession(ctx context.Context, sessionID string, displayName string) (domain.Session, error) {
+	if sessionID == "" {
+		return domain.Session{}, errors.New("session_id is required")
+	}
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return domain.Session{}, errors.New("display_name is required")
+	}
+	if err := s.repository.UpdateSessionDisplayName(ctx, sessionID, displayName, s.clock.Now()); err != nil {
+		return domain.Session{}, err
+	}
+	session, found, err := s.repository.FindSession(ctx, sessionID)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	if !found {
+		return domain.Session{}, sql.ErrNoRows
+	}
+	return session, nil
+}
+
 func (s *Service) CancelTask(ctx context.Context, taskID string, reason string) error {
 	if taskID == "" {
 		return errors.New("task_id is required")
@@ -159,13 +185,45 @@ func (s *Service) ListPending(ctx context.Context) ([]domain.Task, error) {
 }
 
 func (s *Service) ListHistory(ctx context.Context, limit int, offset int) ([]domain.Task, error) {
+	limit, offset = normalizeListBounds(limit, offset)
+	return s.repository.ListHistory(ctx, limit, offset)
+}
+
+func (s *Service) ListArchivedHistory(ctx context.Context, limit int, offset int) ([]domain.Task, error) {
+	limit, offset = normalizeListBounds(limit, offset)
+	return s.repository.ListArchivedHistory(ctx, limit, offset)
+}
+
+func (s *Service) ArchiveHistoryTasks(ctx context.Context, taskIDs []string) (HistoryTasksOutcome, error) {
+	if len(taskIDs) == 0 {
+		return HistoryTasksOutcome{}, errors.New("task_ids is required")
+	}
+	updated, err := s.repository.ArchiveHistoryTasks(ctx, taskIDs, s.clock.Now())
+	if err != nil {
+		return HistoryTasksOutcome{}, err
+	}
+	return HistoryTasksOutcome{Updated: updated}, nil
+}
+
+func (s *Service) UnarchiveHistoryTasks(ctx context.Context, taskIDs []string) (HistoryTasksOutcome, error) {
+	if len(taskIDs) == 0 {
+		return HistoryTasksOutcome{}, errors.New("task_ids is required")
+	}
+	updated, err := s.repository.UnarchiveHistoryTasks(ctx, taskIDs)
+	if err != nil {
+		return HistoryTasksOutcome{}, err
+	}
+	return HistoryTasksOutcome{Updated: updated}, nil
+}
+
+func normalizeListBounds(limit int, offset int) (int, int) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	return s.repository.ListHistory(ctx, limit, offset)
+	return limit, offset
 }
 
 func IsNotFound(err error) bool {

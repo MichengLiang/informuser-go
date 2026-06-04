@@ -53,6 +53,46 @@ type submitReplyRequest struct {
 	ReplySource string `json:"reply_source"`
 }
 
+type renameSessionRequest struct {
+	DisplayName string `json:"display_name"`
+}
+
+type sessionDTO struct {
+	SessionID   string `json:"session_id"`
+	DisplayName string `json:"display_name"`
+	AutoName    string `json:"auto_name"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+	LastSeenAt  string `json:"last_seen_at"`
+}
+
+func newSessionDTO(session domain.Session) sessionDTO {
+	return sessionDTO{
+		SessionID:   session.SessionID,
+		DisplayName: session.DisplayName,
+		AutoName:    session.AutoName,
+		CreatedAt:   formatJSONTime(session.CreatedAt),
+		UpdatedAt:   formatJSONTime(session.UpdatedAt),
+		LastSeenAt:  formatJSONTime(session.LastSeenAt),
+	}
+}
+
+type historyTasksRequest struct {
+	TaskIDs []string `json:"task_ids"`
+}
+
+type historyTasksResponse struct {
+	Status  string `json:"status"`
+	Updated int    `json:"updated"`
+}
+
+func newHistoryTasksResponse(outcome app.HistoryTasksOutcome) historyTasksResponse {
+	return historyTasksResponse{
+		Status:  "ok",
+		Updated: outcome.Updated,
+	}
+}
+
 type taskResultResponse struct {
 	Status      string `json:"status"`
 	UserInput   string `json:"user_input,omitempty"`
@@ -95,6 +135,7 @@ type taskDTO struct {
 	CancelReason       string `json:"cancel_reason,omitempty"`
 	CreatedAt          string `json:"created_at"`
 	CompletedAt        string `json:"completed_at,omitempty"`
+	ArchivedAt         string `json:"archived_at,omitempty"`
 	UpdatedAt          string `json:"updated_at"`
 }
 
@@ -112,6 +153,7 @@ func newTaskDTO(task domain.Task) taskDTO {
 		CancelReason:       task.CancelReason,
 		CreatedAt:          formatJSONTime(task.CreatedAt),
 		CompletedAt:        formatOptionalJSONTime(task.CompletedAt),
+		ArchivedAt:         formatOptionalJSONTime(task.ArchivedAt),
 		UpdatedAt:          formatJSONTime(task.UpdatedAt),
 	}
 }

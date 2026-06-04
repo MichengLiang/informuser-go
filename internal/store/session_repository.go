@@ -104,6 +104,53 @@ func (r *TaskRepository) UpdateSessionDisplayName(
 	return requireAffected(result)
 }
 
+func (r *TaskRepository) EnsureArchiveMigration(ctx context.Context) error {
+	rows, err := r.db.QueryContext(ctx, `PRAGMA table_info(tasks)`)
+	if err != nil {
+		return err
+	}
+
+	hasArchivedAt := false
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if name == "archived_at" {
+			hasArchivedAt = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	if !hasArchivedAt {
+		if _, err := r.db.ExecContext(ctx, `ALTER TABLE tasks ADD COLUMN archived_at TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	_, err = r.db.ExecContext(ctx, `
+CREATE INDEX IF NOT EXISTS idx_tasks_history_active
+ON tasks(status, completed_at DESC)
+WHERE status = 'completed' AND archived_at = '';
+
+CREATE INDEX IF NOT EXISTS idx_tasks_history_archived
+ON tasks(status, archived_at DESC)
+WHERE status = 'completed' AND archived_at <> '';
+`)
+	return err
+}
+
 func (r *TaskRepository) BackfillSessions(ctx context.Context) error {
 	rows, err := r.db.QueryContext(
 		ctx,

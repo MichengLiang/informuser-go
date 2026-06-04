@@ -14,8 +14,8 @@ func (r *TaskRepository) InsertTask(ctx context.Context, task domain.Task) error
 		ctx,
 		`INSERT INTO tasks (
 			task_id, session_id, title, markdown, status, user_input, reply_source,
-			cancel_reason, created_at, completed_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			cancel_reason, created_at, completed_at, archived_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		task.TaskID,
 		task.SessionID,
 		task.Title,
@@ -26,6 +26,7 @@ func (r *TaskRepository) InsertTask(ctx context.Context, task domain.Task) error
 		task.CancelReason,
 		formatTime(task.CreatedAt),
 		formatOptionalTime(task.CompletedAt),
+		formatOptionalTime(task.ArchivedAt),
 		formatTime(task.UpdatedAt),
 	)
 	return err
@@ -36,7 +37,7 @@ func (r *TaskRepository) FindTaskByID(ctx context.Context, taskID string) (domai
 		ctx,
 		`SELECT t.task_id, t.session_id, COALESCE(s.display_name, ''), COALESCE(s.auto_name, ''),
 			t.title, t.markdown, t.status, t.user_input, t.reply_source,
-			t.cancel_reason, t.created_at, t.completed_at, t.updated_at
+			t.cancel_reason, t.created_at, t.completed_at, t.archived_at, t.updated_at
 		FROM tasks t
 		LEFT JOIN sessions s ON s.session_id = t.session_id
 		WHERE t.task_id = ?`,
@@ -49,7 +50,7 @@ func (r *TaskRepository) FindPendingBySessionID(ctx context.Context, sessionID s
 		ctx,
 		`SELECT t.task_id, t.session_id, COALESCE(s.display_name, ''), COALESCE(s.auto_name, ''),
 			t.title, t.markdown, t.status, t.user_input, t.reply_source,
-			t.cancel_reason, t.created_at, t.completed_at, t.updated_at
+			t.cancel_reason, t.created_at, t.completed_at, t.archived_at, t.updated_at
 		FROM tasks t
 		LEFT JOIN sessions s ON s.session_id = t.session_id
 		WHERE t.session_id = ? AND t.status = ?
@@ -133,7 +134,7 @@ func (r *TaskRepository) ListPending(ctx context.Context) ([]domain.Task, error)
 		ctx,
 		`SELECT t.task_id, t.session_id, COALESCE(s.display_name, ''), COALESCE(s.auto_name, ''),
 			t.title, t.markdown, t.status, t.user_input, t.reply_source,
-			t.cancel_reason, t.created_at, t.completed_at, t.updated_at
+			t.cancel_reason, t.created_at, t.completed_at, t.archived_at, t.updated_at
 		FROM tasks t
 		LEFT JOIN sessions s ON s.session_id = t.session_id
 		WHERE t.status = ?
@@ -153,10 +154,10 @@ func (r *TaskRepository) ListHistory(ctx context.Context, limit int, offset int)
 		ctx,
 		`SELECT t.task_id, t.session_id, COALESCE(s.display_name, ''), COALESCE(s.auto_name, ''),
 			t.title, t.markdown, t.status, t.user_input, t.reply_source,
-			t.cancel_reason, t.created_at, t.completed_at, t.updated_at
+			t.cancel_reason, t.created_at, t.completed_at, t.archived_at, t.updated_at
 		FROM tasks t
 		LEFT JOIN sessions s ON s.session_id = t.session_id
-		WHERE t.status = ?
+		WHERE t.status = ? AND t.archived_at = ''
 		ORDER BY t.completed_at DESC
 		LIMIT ? OFFSET ?`,
 		domain.TaskStatusCompleted.String(),
@@ -169,6 +170,113 @@ func (r *TaskRepository) ListHistory(ctx context.Context, limit int, offset int)
 	defer rows.Close()
 
 	return scanTasks(rows)
+}
+
+func (r *TaskRepository) ListArchivedHistory(ctx context.Context, limit int, offset int) ([]domain.Task, error) {
+	rows, err := r.db.QueryContext(
+		ctx,
+		`SELECT t.task_id, t.session_id, COALESCE(s.display_name, ''), COALESCE(s.auto_name, ''),
+			t.title, t.markdown, t.status, t.user_input, t.reply_source,
+			t.cancel_reason, t.created_at, t.completed_at, t.archived_at, t.updated_at
+		FROM tasks t
+		LEFT JOIN sessions s ON s.session_id = t.session_id
+		WHERE t.status = ? AND t.archived_at <> ''
+		ORDER BY t.archived_at DESC
+		LIMIT ? OFFSET ?`,
+		domain.TaskStatusCompleted.String(),
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanTasks(rows)
+}
+
+func (r *TaskRepository) ArchiveHistoryTasks(ctx context.Context, taskIDs []string, archivedAt time.Time) (int, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	archivedStates, err := validateCompletedTasks(ctx, tx, taskIDs)
+	if err != nil {
+		return 0, err
+	}
+
+	updated := 0
+	for taskID, alreadyArchived := range archivedStates {
+		if alreadyArchived {
+			continue
+		}
+		result, err := tx.ExecContext(
+			ctx,
+			`UPDATE tasks
+			SET archived_at = ?, updated_at = ?
+			WHERE task_id = ? AND archived_at = ''`,
+			formatTime(archivedAt),
+			formatTime(archivedAt),
+			taskID,
+		)
+		if err != nil {
+			return 0, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		updated += int(affected)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return updated, nil
+}
+
+func (r *TaskRepository) UnarchiveHistoryTasks(ctx context.Context, taskIDs []string) (int, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	archivedStates, err := validateCompletedTasks(ctx, tx, taskIDs)
+	if err != nil {
+		return 0, err
+	}
+
+	updated := 0
+	for taskID, alreadyArchived := range archivedStates {
+		if !alreadyArchived {
+			continue
+		}
+		result, err := tx.ExecContext(
+			ctx,
+			`UPDATE tasks
+			SET archived_at = ''
+			WHERE task_id = ? AND archived_at <> ''`,
+			taskID,
+		)
+		if err != nil {
+			return 0, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		updated += int(affected)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return updated, nil
 }
 
 type taskScanner interface {
@@ -206,6 +314,7 @@ func scanTask(scanner taskScanner) (domain.Task, error) {
 	var status string
 	var createdAtText string
 	var completedAtText string
+	var archivedAtText string
 	var updatedAtText string
 
 	err := scanner.Scan(
@@ -221,6 +330,7 @@ func scanTask(scanner taskScanner) (domain.Task, error) {
 		&task.CancelReason,
 		&createdAtText,
 		&completedAtText,
+		&archivedAtText,
 		&updatedAtText,
 	)
 	if err != nil {
@@ -232,6 +342,10 @@ func scanTask(scanner taskScanner) (domain.Task, error) {
 		return domain.Task{}, err
 	}
 	completedAt, err := parseOptionalTime(completedAtText)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	archivedAt, err := parseOptionalTime(archivedAtText)
 	if err != nil {
 		return domain.Task{}, err
 	}
@@ -249,8 +363,33 @@ func scanTask(scanner taskScanner) (domain.Task, error) {
 	}
 	task.CreatedAt = createdAt
 	task.CompletedAt = completedAt
+	task.ArchivedAt = archivedAt
 	task.UpdatedAt = updatedAt
 	return task, nil
+}
+
+func validateCompletedTasks(ctx context.Context, tx *sql.Tx, taskIDs []string) (map[string]bool, error) {
+	archivedStates := make(map[string]bool, len(taskIDs))
+	for _, taskID := range taskIDs {
+		var status string
+		var archivedAt string
+		err := tx.QueryRowContext(
+			ctx,
+			`SELECT status, archived_at FROM tasks WHERE task_id = ?`,
+			taskID,
+		).Scan(&status, &archivedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		if err != nil {
+			return nil, err
+		}
+		if domain.TaskStatus(status) != domain.TaskStatusCompleted {
+			return nil, errors.New("task is not completed")
+		}
+		archivedStates[taskID] = archivedAt != ""
+	}
+	return archivedStates, nil
 }
 
 func requireAffected(result sql.Result) error {
