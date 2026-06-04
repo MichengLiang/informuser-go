@@ -11,7 +11,11 @@ type EventPublisher interface {
 	Publish(v any)
 }
 
-func NewRouter(service *app.Service, publisher EventPublisher, eventHandler ...http.Handler) http.Handler {
+func NewRouter(
+	service *app.Service,
+	publisher EventPublisher,
+	eventHandler ...http.Handler,
+) http.Handler {
 	handlers := &Handlers{service: service, publisher: publisher}
 
 	router := chi.NewRouter()
@@ -25,6 +29,9 @@ func NewRouter(service *app.Service, publisher EventPublisher, eventHandler ...h
 	router.Get("/api/history", handlers.listHistory)
 	if len(eventHandler) > 0 && eventHandler[0] != nil {
 		router.Handle("/api/events/ws", eventHandler[0])
+	}
+	if len(eventHandler) > 1 && eventHandler[1] != nil {
+		router.Handle("/*", eventHandler[1])
 	}
 	return router
 }

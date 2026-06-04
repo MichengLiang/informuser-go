@@ -15,6 +15,7 @@ import (
 	"github.com/t103o/informuser-go/internal/httpapi"
 	"github.com/t103o/informuser-go/internal/realtime"
 	"github.com/t103o/informuser-go/internal/store"
+	"github.com/t103o/informuser-go/internal/webui"
 )
 
 func main() {
@@ -36,7 +37,12 @@ func run() error {
 
 	hub := realtime.NewHub(32)
 	service := app.NewService(repository, app.RealClock{})
-	router := httpapi.NewRouter(service, hub, realtime.WebSocketHandler(hub))
+	router := httpapi.NewRouter(
+		service,
+		hub,
+		realtime.WebSocketHandler(hub),
+		httpapi.StaticHandler(webui.Files()),
+	)
 
 	server := &http.Server{
 		Addr:              cfg.Addr,
