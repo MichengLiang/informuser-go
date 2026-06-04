@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   connectTaskEvents: vi.fn(),
   fetchHistory: vi.fn(),
   fetchPendingTasks: vi.fn(),
+  renameSession: vi.fn(),
   submitReply: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ vi.mock('./lib/api', async (importOriginal) => {
     connectTaskEvents: apiMocks.connectTaskEvents,
     fetchHistory: apiMocks.fetchHistory,
     fetchPendingTasks: apiMocks.fetchPendingTasks,
+    renameSession: apiMocks.renameSession,
     submitReply: apiMocks.submitReply,
   };
 });
@@ -29,6 +31,7 @@ vi.mock('./features/tasks/TaskList', () => ({
     mode,
     onSelectTask,
     onQuickReply,
+    onRenameSession,
     onToggleHistorySelection,
     selectedHistoryIds,
     exportMode,
@@ -36,6 +39,9 @@ vi.mock('./features/tasks/TaskList', () => ({
     <div data-testid={`task-list-${mode}`}>
       {tasks.map((item) => (
         <div data-testid={`${mode}-${item.task_id}`} key={item.task_id}>
+          <span>
+            {item.session_display_name} · {item.session_auto_name}
+          </span>
           <button type="button" onClick={() => onSelectTask(item)}>
             Select {item.title}
           </button>
@@ -53,6 +59,14 @@ vi.mock('./features/tasks/TaskList', () => ({
               Select history {item.task_id}
             </label>
           ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              void onRenameSession(item.session_id, 'Renamed').catch(() => undefined);
+            }}
+          >
+            Rename {mode} {item.session_id}
+          </button>
         </div>
       ))}
     </div>
@@ -124,6 +138,7 @@ type MockTaskListProps = {
   mode: 'pending' | 'history';
   onSelectTask: (task: MockTask) => void;
   onQuickReply: (task: MockTask, value: string) => Promise<void>;
+  onRenameSession: (sessionId: string, displayName: string) => Promise<void>;
   onToggleHistorySelection: (taskId: string) => void;
   selectedHistoryIds: Set<string>;
   exportMode?: boolean;
@@ -164,6 +179,7 @@ describe('App', () => {
     apiMocks.fetchPendingTasks.mockReset();
     apiMocks.fetchHistory.mockReset();
     apiMocks.submitReply.mockReset();
+    apiMocks.renameSession.mockReset();
     apiMocks.connectTaskEvents.mockReset();
     cleanupEvents = vi.fn();
     eventHandler = undefined;
@@ -295,6 +311,104 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Load more' }));
     await waitFor(() => expect(apiMocks.fetchHistory).toHaveBeenLastCalledWith(80, 2));
+  });
+
+  it('renames sessions and updates loaded pending and history tasks', async () => {
+    const pending = task({
+      task_id: 'pending-1',
+      title: 'Pending spring',
+      session_id: 'session-spring',
+      session_display_name: 'Spring',
+      session_auto_name: 'S-SPRNG',
+    });
+    const history = task({
+      task_id: 'history-1',
+      title: 'History spring',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      session_id: 'session-spring',
+      session_display_name: 'Spring',
+      session_auto_name: 'S-SPRNG',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([pending]);
+    apiMocks.fetchHistory.mockResolvedValue([history]);
+    apiMocks.renameSession.mockResolvedValue({
+      session_id: 'session-spring',
+      display_name: 'Renamed',
+      auto_name: 'S-SPRNG',
+      created_at: '2026-06-05T01:00:00Z',
+      updated_at: '2026-06-05T03:00:00Z',
+      last_seen_at: '2026-06-05T02:00:00Z',
+    });
+
+    render(<App />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Rename pending session-spring' }),
+    );
+
+    await waitFor(() =>
+      expect(apiMocks.renameSession).toHaveBeenCalledWith('session-spring', 'Renamed'),
+    );
+    expect(
+      await screen.findByRole('button', { name: 'Rename pending session-spring' }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'History' }));
+    expect(screen.getByTestId('history-history-1')).toHaveTextContent('Renamed');
+  });
+
+  it('keeps loaded-more history tasks grouped by session metadata', async () => {
+    const first = task({
+      task_id: 'history-1',
+      title: 'First history',
+      status: 'completed',
+      completed_at: '2026-06-05T03:00:00Z',
+      session_id: 'session-spring',
+      session_display_name: 'Spring',
+      session_auto_name: 'S-SPRNG',
+    });
+    const older = task({
+      task_id: 'history-2',
+      title: 'Older history',
+      status: 'completed',
+      completed_at: '2026-06-05T01:00:00Z',
+      session_id: 'session-spring',
+      session_display_name: 'Spring',
+      session_auto_name: 'S-SPRNG',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([]);
+    apiMocks.fetchHistory.mockResolvedValueOnce([first]).mockResolvedValueOnce([older]);
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Load more' }));
+
+    expect(await screen.findByTestId('history-history-2')).toHaveTextContent('Spring · S-SPRNG');
+    await waitFor(() => expect(apiMocks.fetchHistory).toHaveBeenLastCalledWith(80, 1));
+  });
+
+  it('shows rename errors without changing loaded task names', async () => {
+    const pending = task({
+      task_id: 'pending-1',
+      title: 'Pending spring',
+      session_id: 'session-spring',
+      session_display_name: 'Spring',
+      session_auto_name: 'S-SPRNG',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([pending]);
+    apiMocks.fetchHistory.mockResolvedValue([]);
+    apiMocks.renameSession.mockRejectedValue(new Error('rename failed'));
+
+    render(<App />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Rename pending session-spring' }),
+    );
+
+    expect(await screen.findByText('rename failed')).toBeInTheDocument();
+    expect(screen.getByTestId('pending-pending-1')).toHaveTextContent('Spring');
   });
 
   it('shows load, submit, load-more, and permission errors', async () => {

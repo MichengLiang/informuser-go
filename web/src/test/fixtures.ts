@@ -7,6 +7,8 @@ export function task(overrides: Partial<Task> = {}): Task {
     title: 'Need review',
     markdown: '# Review\n\nPlease check this.',
     status: 'pending',
+    session_display_name: 'Session One',
+    session_auto_name: 'S-ONE1',
     created_at: '2026-06-05T01:00:00Z',
     updated_at: '2026-06-05T01:00:00Z',
     ...overrides,

@@ -3,6 +3,8 @@ export type TaskStatus = 'pending' | 'completed' | 'cancelled';
 export type Task = {
   task_id: string;
   session_id: string;
+  session_display_name: string;
+  session_auto_name: string;
   title: string;
   markdown: string;
   status: TaskStatus;
@@ -11,7 +13,17 @@ export type Task = {
   cancel_reason?: string;
   created_at: string;
   completed_at?: string;
+  archived_at?: string;
   updated_at: string;
+};
+
+export type Session = {
+  session_id: string;
+  display_name: string;
+  auto_name: string;
+  created_at: string;
+  updated_at: string;
+  last_seen_at: string;
 };
 
 export type TaskEvent =
@@ -23,10 +35,18 @@ type ListTasksResponse = {
   tasks: Task[];
 };
 
+async function errorFromResponse(response: Response, fallback: string) {
+  const payload =
+    typeof response.json === 'function'
+      ? ((await response.json().catch(() => ({}))) as { error?: string })
+      : {};
+  return new Error(payload.error ?? `${fallback}: ${response.status}`);
+}
+
 export async function fetchPendingTasks(): Promise<Task[]> {
   const response = await fetch('/api/tasks/pending');
   if (!response.ok) {
-    throw new Error(`Failed to load pending tasks: ${response.status}`);
+    throw await errorFromResponse(response, 'Failed to load pending tasks');
   }
   const data = (await response.json()) as ListTasksResponse;
   return data.tasks;
@@ -35,7 +55,7 @@ export async function fetchPendingTasks(): Promise<Task[]> {
 export async function fetchHistory(limit = 80, offset = 0): Promise<Task[]> {
   const response = await fetch(`/api/history?limit=${limit}&offset=${offset}`);
   if (!response.ok) {
-    throw new Error(`Failed to load history: ${response.status}`);
+    throw await errorFromResponse(response, 'Failed to load history');
   }
   const data = (await response.json()) as ListTasksResponse;
   return data.tasks;
@@ -49,9 +69,22 @@ export async function submitReply(taskId: string, userInput: string, replySource
   });
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(payload.error ?? `Failed to submit reply: ${response.status}`);
+    throw await errorFromResponse(response, 'Failed to submit reply');
   }
+}
+
+export async function renameSession(sessionId: string, displayName: string): Promise<Session> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display_name: displayName }),
+  });
+
+  if (!response.ok) {
+    throw await errorFromResponse(response, 'Failed to rename session');
+  }
+
+  return (await response.json()) as Session;
 }
 
 export function connectTaskEvents(

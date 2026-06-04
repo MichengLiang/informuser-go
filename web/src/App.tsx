@@ -9,6 +9,7 @@ import {
   connectTaskEvents,
   fetchHistory,
   fetchPendingTasks,
+  renameSession,
   submitReply,
   type Task,
   type TaskEvent,
@@ -192,6 +193,26 @@ function App() {
     setHistoryExportMode(false);
   };
 
+  const updateLoadedSessionNames = (sessionId: string, displayName: string, autoName: string) => {
+    const updateTask = (task: Task) =>
+      task.session_id === sessionId
+        ? { ...task, session_display_name: displayName, session_auto_name: autoName }
+        : task;
+    setPendingTasks((tasks) => tasks.map(updateTask));
+    setHistoryTasks((tasks) => tasks.map(updateTask));
+  };
+
+  const handleRenameSession = async (sessionId: string, displayName: string) => {
+    setError(undefined);
+    try {
+      const session = await renameSession(sessionId, displayName);
+      updateLoadedSessionNames(session.session_id, session.display_name, session.auto_name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  };
+
   const loadMoreHistory = async () => {
     setError(undefined);
     try {
@@ -363,6 +384,7 @@ function App() {
                   selectedHistoryIds={selectedHistoryIds}
                   onSelectTask={selectTask}
                   onQuickReply={(task, value) => handleSubmit(task, value, 'quick_paste')}
+                  onRenameSession={handleRenameSession}
                   onToggleHistorySelection={() => undefined}
                 />
               </Tabs.Content>
@@ -375,6 +397,7 @@ function App() {
                   selectedHistoryIds={selectedHistoryIds}
                   onSelectTask={selectTask}
                   onQuickReply={(task, value) => handleSubmit(task, value, 'quick_paste')}
+                  onRenameSession={handleRenameSession}
                   onToggleHistorySelection={(taskId) =>
                     setSelectedHistoryIds((current) => {
                       const next = new Set(current);

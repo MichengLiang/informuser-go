@@ -1,8 +1,19 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { CheckCircle2, Clock3 } from 'lucide-react';
-import { useRef } from 'react';
+import { CheckCircle2, Clock3, Pencil } from 'lucide-react';
+import type { CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from '../../lib/api';
 import { QuickPasteReply } from '../reply/QuickPasteReply';
+
+type TaskGroup = {
+  sessionId: string;
+  displayName: string;
+  autoName: string;
+  tasks: Task[];
+  latestAt: string;
+};
+
+type TaskListItem = { type: 'group'; group: TaskGroup } | { type: 'task'; task: Task };
 
 type TaskListProps = {
   tasks: Task[];
@@ -13,8 +24,51 @@ type TaskListProps = {
   selectedHistoryIds: Set<string>;
   onSelectTask: (task: Task) => void;
   onQuickReply: (task: Task, value: string) => Promise<void>;
+  onRenameSession: (sessionId: string, displayName: string) => Promise<void>;
   onToggleHistorySelection: (taskId: string) => void;
 };
+
+function taskSortTime(task: Task, mode: 'pending' | 'history') {
+  return mode === 'history' ? (task.completed_at ?? task.created_at) : task.created_at;
+}
+
+function buildTaskGroups(tasks: Task[], mode: 'pending' | 'history') {
+  const groups = new Map<string, TaskGroup>();
+  for (const task of tasks) {
+    const latestAt = taskSortTime(task, mode);
+    const group = groups.get(task.session_id);
+    if (group) {
+      group.tasks.push(task);
+      if (latestAt > group.latestAt) {
+        group.latestAt = latestAt;
+      }
+      continue;
+    }
+    groups.set(task.session_id, {
+      sessionId: task.session_id,
+      displayName: task.session_display_name,
+      autoName: task.session_auto_name,
+      tasks: [task],
+      latestAt,
+    });
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      tasks: group.tasks
+        .slice()
+        .sort((a, b) => taskSortTime(b, mode).localeCompare(taskSortTime(a, mode))),
+    }))
+    .sort((a, b) => b.latestAt.localeCompare(a.latestAt) || b.sessionId.localeCompare(a.sessionId));
+}
+
+function buildListItems(groups: TaskGroup[]): TaskListItem[] {
+  return groups.flatMap((group) => [
+    { type: 'group' as const, group },
+    ...group.tasks.map((task) => ({ type: 'task' as const, task })),
+  ]);
+}
 
 export function TaskList({
   tasks,
@@ -25,13 +79,22 @@ export function TaskList({
   selectedHistoryIds,
   onSelectTask,
   onQuickReply,
+  onRenameSession,
   onToggleHistorySelection,
 }: TaskListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const groups = useMemo(() => buildTaskGroups(tasks, mode), [tasks, mode]);
+  const items = useMemo(() => buildListItems(groups), [groups]);
   const virtualizer = useVirtualizer({
-    count: tasks.length,
+    count: items.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => (mode === 'pending' ? 112 : 76),
+    estimateSize: (index) => {
+      const item = items[index];
+      if (item?.type === 'group') {
+        return 48;
+      }
+      return mode === 'pending' ? 112 : 76;
+    },
     overscan: 8,
   });
 
@@ -51,7 +114,18 @@ export function TaskList({
     <div className="task-list-scroll" ref={parentRef}>
       <div className="virtual-list" style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((virtualRow) => {
-          const task = tasks[virtualRow.index];
+          const item = items[virtualRow.index];
+          if (item.type === 'group') {
+            return (
+              <SessionGroupHeader
+                key={`group-${item.group.sessionId}`}
+                group={item.group}
+                onRenameSession={onRenameSession}
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              />
+            );
+          }
+          const task = item.task;
           const selected = activeTaskId === task.task_id;
           const historyChecked = selectedHistoryIds.has(task.task_id);
           return (
@@ -94,6 +168,108 @@ export function TaskList({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function SessionGroupHeader({
+  group,
+  onRenameSession,
+  style,
+}: {
+  group: TaskGroup;
+  onRenameSession: (sessionId: string, displayName: string) => Promise<void>;
+  style: CSSProperties;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(group.displayName);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const committedNameRef = useRef(group.displayName);
+
+  const startEditing = () => {
+    committedNameRef.current = group.displayName;
+    setDraft(group.displayName);
+    setEditing(true);
+  };
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  const cancelEditing = () => {
+    setDraft(committedNameRef.current);
+    setEditing(false);
+  };
+
+  const save = async () => {
+    const trimmed = draft.trim();
+    if (!trimmed) {
+      cancelEditing();
+      return;
+    }
+    if (trimmed === committedNameRef.current) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onRenameSession(group.sessionId, trimmed);
+      committedNameRef.current = trimmed;
+      setEditing(false);
+    } catch {
+      // App owns the user-visible error banner; keeping edit mode preserves the draft for retry.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="task-group-row" style={style}>
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="session-rename-input"
+          aria-label="Session display name"
+          value={draft}
+          maxLength={40}
+          disabled={saving}
+          onBlur={() => void save()}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              void save();
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              cancelEditing();
+            }
+          }}
+        />
+      ) : (
+        <h3
+          className="task-group-title"
+          aria-label={`${group.displayName} · ${group.autoName} · ${group.tasks.length}`}
+        >
+          <span>{group.displayName} ·</span>
+          <small>
+            {group.autoName} · {group.tasks.length}
+          </small>
+        </h3>
+      )}
+      <button
+        type="button"
+        className="icon-button session-rename-button"
+        onClick={startEditing}
+        title="Rename session"
+        aria-label="Rename session"
+      >
+        <Pencil size={14} />
+      </button>
     </div>
   );
 }
