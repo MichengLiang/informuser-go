@@ -58,4 +58,19 @@ describe('MarkdownReader', () => {
     expect(raw).toHaveClass('raw-markdown');
     expect(raw).toHaveStyle({ '--reader-font-size': '20px', '--reader-line-height': '1.45' });
   });
+
+  it('shows completed history replies below the assistant Markdown', () => {
+    render(
+      <MarkdownReader
+        markdown="# Assistant request"
+        userInput={'User answered here\nwith a second line'}
+        settings={settings}
+        onSettingsChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Assistant request' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'User reply' })).toBeInTheDocument();
+    expect(screen.getByText(/User answered here/)).toHaveClass('history-reply-content');
+  });
 });

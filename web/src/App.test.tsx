@@ -31,6 +31,7 @@ vi.mock('./features/tasks/TaskList', () => ({
     onQuickReply,
     onToggleHistorySelection,
     selectedHistoryIds,
+    exportMode,
   }: MockTaskListProps) => (
     <div data-testid={`task-list-${mode}`}>
       {tasks.map((item) => (
@@ -42,7 +43,7 @@ vi.mock('./features/tasks/TaskList', () => ({
             <button type="button" onClick={() => onQuickReply(item, 'quick reply')}>
               Quick reply {item.task_id}
             </button>
-          ) : (
+          ) : exportMode ? (
             <label>
               <input
                 type="checkbox"
@@ -51,7 +52,7 @@ vi.mock('./features/tasks/TaskList', () => ({
               />
               Select history {item.task_id}
             </label>
-          )}
+          ) : null}
         </div>
       ))}
     </div>
@@ -59,10 +60,23 @@ vi.mock('./features/tasks/TaskList', () => ({
 }));
 
 vi.mock('./features/markdown/MarkdownReader', () => ({
-  MarkdownReader: ({ markdown, settings, onSettingsChange }: MockMarkdownReaderProps) => (
+  MarkdownReader: ({
+    markdown,
+    userInput,
+    canReply,
+    settings,
+    onSettingsChange,
+    onOpenReply,
+  }: MockMarkdownReaderProps) => (
     <section data-testid="markdown-reader">
       <div>{markdown}</div>
+      {userInput ? <pre>{userInput}</pre> : null}
       <div>font {settings.fontSize}</div>
+      {canReply ? (
+        <button type="button" onClick={onOpenReply}>
+          Open reply
+        </button>
+      ) : null}
       <button type="button" onClick={() => onSettingsChange({ ...settings, fontSize: 18 })}>
         Larger text
       </button>
@@ -108,6 +122,7 @@ type MockTaskListProps = {
   onQuickReply: (task: MockTask, value: string) => Promise<void>;
   onToggleHistorySelection: (taskId: string) => void;
   selectedHistoryIds: Set<string>;
+  exportMode?: boolean;
 };
 
 type MockMarkdownSettings = {
@@ -119,8 +134,11 @@ type MockMarkdownSettings = {
 
 type MockMarkdownReaderProps = {
   markdown: string;
+  userInput?: string;
+  canReply?: boolean;
   settings: MockMarkdownSettings;
   onSettingsChange: (settings: MockMarkdownSettings) => void;
+  onOpenReply?: () => void;
 };
 
 type MockReplyPanelProps = {
@@ -169,7 +187,7 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Pending one')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Pending one/ })).toBeInTheDocument();
     expect(screen.getByText('1 pending')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Quick reply task-1' }));
@@ -179,7 +197,7 @@ describe('App', () => {
 
     const created = task({ task_id: 'task-2', title: 'Event task' });
     eventHandler?.({ type: 'task_created', task: created });
-    expect(await screen.findByText('Event task')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Event task/ })).toBeInTheDocument();
 
     apiMocks.fetchHistory.mockResolvedValueOnce([history]);
     eventHandler?.({
@@ -199,7 +217,9 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Needs panel reply')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Needs panel reply/ })).toBeInTheDocument();
+    expect(screen.queryByTestId('reply-panel')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Open reply' }));
     await userEvent.click(screen.getByRole('button', { name: 'Enable suffix' }));
     await userEvent.click(screen.getByRole('button', { name: 'Set suffix' }));
     await userEvent.click(screen.getByRole('button', { name: 'Submit panel reply' }));
@@ -239,11 +259,13 @@ describe('App', () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
+    expect(await screen.findByText('user one')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /export/i }));
     const historyList = screen.getByTestId('task-list-history');
     await userEvent.click(within(historyList).getByLabelText('Select history history-2'));
     await userEvent.click(within(historyList).getByLabelText('Select history history-2'));
     await userEvent.click(within(historyList).getByLabelText('Select history history-2'));
-    await userEvent.click(screen.getByRole('button', { name: /export/i }));
+    await userEvent.click(screen.getByRole('button', { name: /copy \(1\)/i }));
 
     await waitFor(() =>
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(

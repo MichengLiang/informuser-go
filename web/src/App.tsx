@@ -1,6 +1,6 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { Bell, ClipboardCopy, Inbox, Radio, Volume2 } from 'lucide-react';
+import { Bell, CheckSquare, ClipboardCopy, Inbox, Radio, Shuffle, Volume2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { MarkdownReader, type MarkdownSettings } from './features/markdown/MarkdownReader';
 import { ReplyPanel } from './features/reply/ReplyPanel';
@@ -45,6 +45,8 @@ function App() {
   const [error, setError] = useState<string | undefined>();
   const [submittingTaskId, setSubmittingTaskId] = useState<string | undefined>();
   const [selectedHistoryIds, setSelectedHistoryIds] = useState(() => new Set<string>());
+  const [replyMode, setReplyMode] = useState(false);
+  const [historyExportMode, setHistoryExportMode] = useState(false);
   const [markdownSettings, setMarkdownSettings] = useState<MarkdownSettings>(() =>
     loadJSON('askuser.markdownSettings', defaultMarkdownSettings),
   );
@@ -133,6 +135,7 @@ function App() {
         const taskId = event.task_id;
         setPendingTasks((tasks) => tasks.filter((task) => task.task_id !== taskId));
         localStorage.removeItem(`askuser.drafts.${taskId}`);
+        setReplyMode(false);
         setHistoryTasks(await fetchHistory(historyPageSize));
       }
     };
@@ -163,6 +166,7 @@ function App() {
       await submitReply(task.task_id, combinedReply(value), source);
       setPendingTasks((tasks) => tasks.filter((item) => item.task_id !== task.task_id));
       localStorage.removeItem(`askuser.drafts.${task.task_id}`);
+      setReplyMode(false);
       setHistoryTasks(await fetchHistory(historyPageSize));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -185,6 +189,7 @@ function App() {
       .join('\n\n');
     await navigator.clipboard.writeText(xml);
     setSelectedHistoryIds(new Set());
+    setHistoryExportMode(false);
   };
 
   const loadMoreHistory = async () => {
@@ -195,6 +200,44 @@ function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  };
+
+  const changeTab = (value: string) => {
+    setTab(value as typeof tab);
+    setReplyMode(false);
+    setHistoryExportMode(false);
+    setSelectedHistoryIds(new Set());
+  };
+
+  const selectTask = (task: Task) => {
+    setActiveTaskId(task.task_id);
+    setReplyMode(false);
+  };
+
+  const enterHistoryExportMode = () => {
+    setHistoryExportMode(true);
+    setSelectedHistoryIds(new Set());
+  };
+
+  const exitHistoryExportMode = () => {
+    setHistoryExportMode(false);
+    setSelectedHistoryIds(new Set());
+  };
+
+  const selectAllHistory = () => {
+    setSelectedHistoryIds(new Set(historyTasks.map((task) => task.task_id)));
+  };
+
+  const invertHistorySelection = () => {
+    setSelectedHistoryIds((current) => {
+      const next = new Set<string>();
+      for (const task of historyTasks) {
+        if (!current.has(task.task_id)) {
+          next.add(task.task_id);
+        }
+      }
+      return next;
+    });
   };
 
   const toggleNotifications = async () => {
@@ -250,9 +293,9 @@ function App() {
 
         {error ? <div className="error-banner">{error}</div> : null}
 
-        <main className="workspace">
+        <main className={`workspace ${replyMode ? 'reply-mode' : ''}`}>
           <section className="task-panel">
-            <Tabs.Root value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+            <Tabs.Root value={tab} onValueChange={changeTab}>
               <div className="panel-heading tabs-heading">
                 <Tabs.List className="tabs-list">
                   <Tabs.Trigger value="pending">Pending</Tabs.Trigger>
@@ -262,15 +305,45 @@ function App() {
                   <button
                     type="button"
                     className="tool-button"
-                    disabled={selectedHistoryIds.size === 0}
-                    onClick={() => void exportSelected()}
+                    disabled={historyTasks.length === 0}
+                    onClick={enterHistoryExportMode}
                     title="Copy selected history as XML"
+                    style={{ display: historyExportMode ? 'none' : undefined }}
                   >
                     <ClipboardCopy size={15} />
                     Export
                   </button>
                 ) : null}
               </div>
+              {tab === 'history' && historyExportMode ? (
+                <div className="export-toolbar">
+                  <div className="export-toolbar-left">
+                    <button type="button" className="tool-button" onClick={selectAllHistory}>
+                      <CheckSquare size={15} />
+                      Select all
+                    </button>
+                    <button type="button" className="tool-button" onClick={invertHistorySelection}>
+                      <Shuffle size={15} />
+                      Invert
+                    </button>
+                  </div>
+                  <div className="export-toolbar-right">
+                    <button
+                      type="button"
+                      className="tool-button"
+                      disabled={selectedHistoryIds.size === 0}
+                      onClick={() => void exportSelected()}
+                    >
+                      <ClipboardCopy size={15} />
+                      Copy ({selectedHistoryIds.size})
+                    </button>
+                    <button type="button" className="tool-button" onClick={exitHistoryExportMode}>
+                      <X size={15} />
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <Tabs.Content value="pending">
                 <TaskList
                   tasks={pendingTasks}
@@ -278,7 +351,7 @@ function App() {
                   activeTaskId={activeTask?.task_id}
                   submittingTaskId={submittingTaskId}
                   selectedHistoryIds={selectedHistoryIds}
-                  onSelectTask={(task) => setActiveTaskId(task.task_id)}
+                  onSelectTask={selectTask}
                   onQuickReply={(task, value) => handleSubmit(task, value, 'quick_paste')}
                   onToggleHistorySelection={() => undefined}
                 />
@@ -287,9 +360,10 @@ function App() {
                 <TaskList
                   tasks={historyTasks}
                   mode="history"
+                  exportMode={historyExportMode}
                   activeTaskId={activeTask?.task_id}
                   selectedHistoryIds={selectedHistoryIds}
-                  onSelectTask={(task) => setActiveTaskId(task.task_id)}
+                  onSelectTask={selectTask}
                   onQuickReply={(task, value) => handleSubmit(task, value, 'quick_paste')}
                   onToggleHistorySelection={(taskId) =>
                     setSelectedHistoryIds((current) => {
@@ -316,20 +390,28 @@ function App() {
             </Tabs.Root>
           </section>
 
-          <MarkdownReader
-            markdown={activeTask?.markdown ?? 'Select a task to read its Markdown content.'}
-            settings={markdownSettings}
-            onSettingsChange={setMarkdownSettings}
-          />
+          <section className="detail-workspace">
+            <MarkdownReader
+              markdown={activeTask?.markdown ?? 'Select a task to read its Markdown content.'}
+              userInput={activeTask?.status === 'completed' ? activeTask.user_input : undefined}
+              canReply={activeTask?.status === 'pending'}
+              settings={markdownSettings}
+              onSettingsChange={setMarkdownSettings}
+              onOpenReply={() => setReplyMode(true)}
+            />
 
-          <ReplyPanel
-            task={activeTask?.status === 'pending' ? activeTask : undefined}
-            suffix={suffix}
-            suffixEnabled={suffixEnabled}
-            onSuffixChange={setSuffix}
-            onSuffixEnabledChange={setSuffixEnabled}
-            onSubmit={handleSubmit}
-          />
+            {replyMode ? (
+              <ReplyPanel
+                task={activeTask?.status === 'pending' ? activeTask : undefined}
+                suffix={suffix}
+                suffixEnabled={suffixEnabled}
+                onSuffixChange={setSuffix}
+                onSuffixEnabledChange={setSuffixEnabled}
+                onSubmit={handleSubmit}
+                onClose={() => setReplyMode(false)}
+              />
+            ) : null}
+          </section>
         </main>
       </div>
     </Tooltip.Provider>

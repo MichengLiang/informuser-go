@@ -53,16 +53,17 @@ describe('TaskList', () => {
     await waitFor(() => expect(onQuickReply).toHaveBeenCalledWith(currentTask, 'quick reply'));
   });
 
-  it('renders history selection without quick paste controls', async () => {
+  it('keeps history selection controls hidden until export mode is enabled', async () => {
     const currentTask = task({ status: 'completed', completed_at: '2026-06-05T02:00:00Z' });
     const onSelectTask = vi.fn();
     const onToggleHistorySelection = vi.fn();
 
-    render(
+    const { rerender } = render(
       <TaskList
         tasks={[currentTask]}
         activeTaskId="task-1"
         mode="history"
+        exportMode={false}
         selectedHistoryIds={new Set(['task-1'])}
         onSelectTask={onSelectTask}
         onQuickReply={vi.fn()}
@@ -71,6 +72,21 @@ describe('TaskList', () => {
     );
 
     expect(screen.queryByPlaceholderText('Paste here to send')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Select history item')).not.toBeInTheDocument();
+
+    rerender(
+      <TaskList
+        tasks={[currentTask]}
+        activeTaskId="task-1"
+        mode="history"
+        exportMode={true}
+        selectedHistoryIds={new Set(['task-1'])}
+        onSelectTask={onSelectTask}
+        onQuickReply={vi.fn()}
+        onToggleHistorySelection={onToggleHistorySelection}
+      />,
+    );
+
     const checkbox = screen.getByLabelText('Select history item');
     expect(checkbox).toBeChecked();
 

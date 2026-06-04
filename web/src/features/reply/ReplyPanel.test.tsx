@@ -97,4 +97,22 @@ describe('ReplyPanel', () => {
     expect(onSuffixEnabledChange).toHaveBeenCalledWith(true);
     expect(onSuffixChange).toHaveBeenLastCalledWith('e');
   });
+
+  it('calls onClose when the close button is shown', async () => {
+    const onClose = vi.fn();
+    render(
+      <ReplyPanel
+        task={task()}
+        suffixEnabled={false}
+        suffix=""
+        onSuffixEnabledChange={vi.fn()}
+        onSuffixChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    await userEvent.click(screen.getByTitle('Close reply panel'));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });

@@ -8,6 +8,7 @@ type TaskListProps = {
   tasks: Task[];
   activeTaskId?: string;
   mode: 'pending' | 'history';
+  exportMode?: boolean;
   submittingTaskId?: string;
   selectedHistoryIds: Set<string>;
   onSelectTask: (task: Task) => void;
@@ -19,6 +20,7 @@ export function TaskList({
   tasks,
   activeTaskId,
   mode,
+  exportMode = false,
   submittingTaskId,
   selectedHistoryIds,
   onSelectTask,
@@ -59,7 +61,7 @@ export function TaskList({
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
               <div className="task-row-header">
-                {mode === 'history' ? (
+                {mode === 'history' && exportMode ? (
                   <input
                     type="checkbox"
                     checked={historyChecked}

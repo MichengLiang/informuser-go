@@ -31,10 +31,9 @@ async function createTask(request: APIRequestContext) {
   expect(response.ok()).toBeTruthy();
 }
 
-test('renders wide Markdown without page overflow and supports quick paste reply', async ({
+test('renders wide Markdown, opens reply mode, and shows completed user reply history', async ({
   page,
   request,
-  context,
 }) => {
   await createTask(request);
   await page.goto('/');
@@ -42,6 +41,7 @@ test('renders wide Markdown without page overflow and supports quick paste reply
 
   await expect(page.getByRole('button', { name: /Wide Markdown review/ })).toBeVisible();
   await expect(page.locator('.markdown-reader')).toContainText('Review request');
+  await expect(page.locator('.reply-panel')).toHaveCount(0);
 
   const hasNoPageOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth <= window.innerWidth && document.body.scrollWidth <= window.innerWidth,
@@ -52,10 +52,11 @@ test('renders wide Markdown without page overflow and supports quick paste reply
   await page.locator('.settings-popover input[type="range"]').fill('20');
   await expect(page.locator('.markdown-reader')).toHaveCSS('font-size', '20px');
 
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await page.evaluate(() => navigator.clipboard.writeText('Approved from Playwright'));
-  await page.locator('.quick-paste').click();
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+V' : 'Control+V');
+  await page.getByRole('button', { name: /^Reply$/ }).click();
+  await expect(page.locator('.workspace')).toHaveClass(/reply-mode/);
+  await expect(page.locator('.reply-panel')).toBeVisible();
+  await page.getByPlaceholder('Write a reply...').fill('Approved from Playwright');
+  await page.getByRole('button', { name: /Submit reply/i }).click();
 
   await expect(page.getByRole('button', { name: /Wide Markdown review/ })).toHaveCount(0);
   const result = await request.get('/api/tasks/task-playwright-1/result');
@@ -64,4 +65,9 @@ test('renders wide Markdown without page overflow and supports quick paste reply
     status: 'found',
     user_input: 'Approved from Playwright',
   });
+
+  await page.getByRole('tab', { name: 'History' }).click();
+  await expect(page.getByRole('button', { name: /Wide Markdown review/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'User reply' })).toBeVisible();
+  await expect(page.locator('.history-reply-content')).toContainText('Approved from Playwright');
 });
