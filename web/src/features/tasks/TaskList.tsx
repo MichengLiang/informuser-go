@@ -51,6 +51,8 @@ type TaskListProps = {
   onUnarchiveGroup?: (tasks: Task[]) => Promise<void>;
 };
 
+const EMPTY_COLLAPSED_SESSION_IDS = new Set<string>();
+
 function taskSortTime(task: Task, mode: 'pending' | 'history' | 'archived') {
   if (mode === 'archived') {
     return task.archived_at ?? task.completed_at ?? task.created_at;
@@ -119,7 +121,7 @@ export function TaskList({
 }: TaskListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const groups = useMemo(() => buildTaskGroups(tasks, mode), [tasks, mode]);
-  const safeCollapsedSessionIds = collapsedSessionIds ?? new Set<string>();
+  const safeCollapsedSessionIds = collapsedSessionIds ?? EMPTY_COLLAPSED_SESSION_IDS;
   const items = useMemo(
     () => buildListItems(groups, safeCollapsedSessionIds),
     [groups, safeCollapsedSessionIds],
