@@ -16,7 +16,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import type { CSSProperties } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from '../../lib/api';
 import { QuickPasteReply } from '../reply/QuickPasteReply';
 
@@ -120,7 +120,6 @@ export function TaskList({
   onUnarchiveGroup,
 }: TaskListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
-  const selectTaskTimerRef = useRef<number | undefined>(undefined);
   const groups = useMemo(() => buildTaskGroups(tasks, mode), [tasks, mode]);
   const safeCollapsedSessionIds = collapsedSessionIds ?? EMPTY_COLLAPSED_SESSION_IDS;
   const items = useMemo(
@@ -146,23 +145,6 @@ export function TaskList({
     } catch {
       // Clipboard availability is browser/permission dependent; row selection should remain unaffected.
     }
-  };
-
-  const clearSelectTaskTimer = useCallback(() => {
-    if (selectTaskTimerRef.current !== undefined) {
-      window.clearTimeout(selectTaskTimerRef.current);
-      selectTaskTimerRef.current = undefined;
-    }
-  }, []);
-
-  useEffect(() => clearSelectTaskTimer, [clearSelectTaskTimer]);
-
-  const selectTaskAfterDoubleClickWindow = (task: Task) => {
-    clearSelectTaskTimer();
-    selectTaskTimerRef.current = window.setTimeout(() => {
-      selectTaskTimerRef.current = undefined;
-      onSelectTask(task);
-    }, 180);
   };
 
   if (tasks.length === 0) {
@@ -231,12 +213,11 @@ export function TaskList({
                   if (event.detail > 1) {
                     return;
                   }
-                  selectTaskAfterDoubleClickWindow(task);
+                  onSelectTask(task);
                 }}
                 onDoubleClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  clearSelectTaskTimer();
                   void copyTaskSummary(task);
                 }}
                 aria-label={`Open task ${task.title}`}

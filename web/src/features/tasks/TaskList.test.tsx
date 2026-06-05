@@ -91,7 +91,7 @@ describe('TaskList', () => {
     });
 
     await userEvent.click(screen.getByRole('button', { name: /need review/i }));
-    await waitFor(() => expect(onSelectTask).toHaveBeenCalledWith(currentTask));
+    expect(onSelectTask).toHaveBeenCalledWith(currentTask);
 
     fireEvent.paste(screen.getByPlaceholderText('Paste here to send'), {
       clipboardData: { getData: () => 'quick reply' },
@@ -152,7 +152,24 @@ describe('TaskList', () => {
     });
 
     await userEvent.click(screen.getByRole('button', { name: /open task need review/i }));
-    await waitFor(() => expect(onSelectTask).toHaveBeenCalledTimes(1));
+    expect(onSelectTask).toHaveBeenCalledTimes(1);
+    expect(onSelectTask).toHaveBeenCalledWith(currentTask);
+  });
+
+  it('selects a task as soon as the row click is handled', async () => {
+    const currentTask = task({ status: 'completed', completed_at: '2026-06-05T02:00:00Z' });
+    const onSelectTask = vi.fn();
+
+    renderTaskList({
+      tasks: [currentTask],
+      activeTaskId: 'other-task',
+      mode: 'history',
+      onSelectTask,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /open task need review/i }));
+
+    expect(onSelectTask).toHaveBeenCalledTimes(1);
     expect(onSelectTask).toHaveBeenCalledWith(currentTask);
   });
 
@@ -176,10 +193,11 @@ describe('TaskList', () => {
     await user.dblClick(screen.getByRole('button', { name: /open task go module release notes/i }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('Go module release notes'));
-    expect(onSelectTask).not.toHaveBeenCalled();
+    expect(onSelectTask).toHaveBeenCalledTimes(1);
+    expect(onSelectTask).toHaveBeenCalledWith(currentTask);
   });
 
-  it('copies a history task summary when the row is double-clicked without toggling selection', async () => {
+  it('copies a history task summary when the row is double-clicked without toggling export selection', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
@@ -206,7 +224,8 @@ describe('TaskList', () => {
     await user.dblClick(screen.getByRole('button', { name: /open task go module release notes/i }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('Go module release notes'));
-    expect(onSelectTask).not.toHaveBeenCalled();
+    expect(onSelectTask).toHaveBeenCalledTimes(1);
+    expect(onSelectTask).toHaveBeenCalledWith(currentTask);
     expect(onToggleTaskSelection).not.toHaveBeenCalled();
   });
 
