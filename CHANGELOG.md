@@ -6,6 +6,10 @@ The project follows semantic versioning once public releases begin.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.1.0] - 2026-06-05
+
 ### Added
 
 - Browser workbench for human-in-the-loop MCP prompts.
@@ -18,4 +22,3 @@ The project follows semantic versioning once public releases begin.
 ### Changed
 
 - Default daemon binding is `0.0.0.0:8765` so LAN URLs printed at startup are usable.
-
