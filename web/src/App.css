@@ -211,6 +211,24 @@
   justify-content: flex-end;
 }
 
+.history-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: 6px;
+}
+
+.selection-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .history-view-label {
   max-width: 120px;
   overflow: hidden;
@@ -799,5 +817,20 @@
     min-height: 260px;
     border-left: 0;
     border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 760px) {
+  .panel-heading {
+    align-items: flex-start;
+  }
+
+  .tabs-heading {
+    flex-wrap: wrap;
+  }
+
+  .history-heading-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

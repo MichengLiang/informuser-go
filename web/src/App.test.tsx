@@ -45,6 +45,8 @@ vi.mock('./features/tasks/TaskList', () => ({
     onExportGroup,
     onArchiveGroup,
     onUnarchiveGroup,
+    collapsedSessionIds,
+    onToggleGroupCollapsed,
   }: MockTaskListProps) => {
     const groups = new Map<string, MockTask[]>();
     for (const item of tasks) {
@@ -54,6 +56,12 @@ vi.mock('./features/tasks/TaskList', () => ({
       <div data-testid={`task-list-${mode}`}>
         {Array.from(groups.entries()).map(([sessionId, groupTasks]) => (
           <div data-testid={`${mode}-group-${sessionId}`} key={sessionId}>
+            <div data-testid={`${mode}-collapsed-${sessionId}`}>
+              {collapsedSessionIds?.has(sessionId) ? 'collapsed' : 'expanded'}
+            </div>
+            <button type="button" onClick={() => onToggleGroupCollapsed?.(sessionId)}>
+              Toggle collapse {mode} {sessionId}
+            </button>
             <button
               type="button"
               onClick={() =>
@@ -192,6 +200,8 @@ type MockTaskListProps = {
   onExportGroup?: (tasks: MockTask[]) => Promise<void>;
   onArchiveGroup?: (tasks: MockTask[]) => Promise<void>;
   onUnarchiveGroup?: (tasks: MockTask[]) => Promise<void>;
+  collapsedSessionIds?: Set<string>;
+  onToggleGroupCollapsed?: (sessionId: string) => void;
 };
 
 type MockMarkdownSettings = {
@@ -241,8 +251,9 @@ describe('App', () => {
       onStatus('connected');
       return cleanupEvents;
     });
-    Object.assign(navigator, {
-      clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
     });
   });
 
@@ -385,7 +396,7 @@ describe('App', () => {
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     expect(await screen.findByText('user one')).toBeInTheDocument();
-    await userEvent.click(screen.getByTitle('Copy selected history as XML'));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const historyList = screen.getByTestId('task-list-history');
     await userEvent.click(within(historyList).getByLabelText('Select history history-2'));
     await userEvent.click(within(historyList).getByLabelText('Select history history-2'));
@@ -400,6 +411,66 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Load more' }));
     await waitFor(() => expect(apiMocks.fetchHistory).toHaveBeenLastCalledWith(80, 2));
+  });
+
+  it('expands and collapses all loaded main history groups from the toolbar', async () => {
+    const user = userEvent.setup();
+    const spring = task({
+      task_id: 'history-spring',
+      session_id: 'spring',
+      session_display_name: 'Spring',
+      status: 'completed',
+      completed_at: '2026-06-05T03:00:00Z',
+    });
+    const summer = task({
+      task_id: 'history-summer',
+      session_id: 'summer',
+      session_display_name: 'Summer',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([]);
+    apiMocks.fetchHistory.mockResolvedValue([spring, summer]);
+
+    render(<App />);
+
+    await user.click(await screen.findByRole('tab', { name: 'History' }));
+    await user.click(screen.getByRole('button', { name: 'Collapse all groups' }));
+    expect(screen.getByTestId('history-collapsed-spring')).toHaveTextContent('collapsed');
+    expect(screen.getByTestId('history-collapsed-summer')).toHaveTextContent('collapsed');
+
+    await user.click(screen.getByRole('button', { name: 'Expand all groups' }));
+    expect(screen.getByTestId('history-collapsed-spring')).toHaveTextContent('expanded');
+    expect(screen.getByTestId('history-collapsed-summer')).toHaveTextContent('expanded');
+  });
+
+  it('keeps existing collapse state and collapses newly loaded history groups', async () => {
+    const user = userEvent.setup();
+    const first = task({
+      task_id: 'history-spring',
+      session_id: 'spring',
+      session_display_name: 'Spring',
+      status: 'completed',
+      completed_at: '2026-06-05T03:00:00Z',
+    });
+    const loaded = task({
+      task_id: 'history-autumn',
+      session_id: 'autumn',
+      session_display_name: 'Autumn',
+      status: 'completed',
+      completed_at: '2026-06-05T01:00:00Z',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([]);
+    apiMocks.fetchHistory.mockResolvedValueOnce([first]).mockResolvedValueOnce([loaded]);
+
+    render(<App />);
+
+    await user.click(await screen.findByRole('tab', { name: 'History' }));
+    expect(screen.getByTestId('history-collapsed-spring')).toHaveTextContent('expanded');
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+    expect(screen.getByTestId('history-collapsed-spring')).toHaveTextContent('expanded');
+    expect(screen.getByTestId('history-collapsed-autumn')).toHaveTextContent('collapsed');
   });
 
   it('archives selected history tasks from the unified selection toolbar', async () => {
@@ -424,7 +495,7 @@ describe('App', () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
-    await userEvent.click(screen.getByTitle('Archive selected history'));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const historyList = screen.getByTestId('task-list-history');
     await userEvent.click(within(historyList).getByLabelText('Select history history-1'));
     await userEvent.click(screen.getByRole('button', { name: 'Archive (1)' }));
@@ -459,7 +530,7 @@ describe('App', () => {
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     expect(await screen.findByText('active markdown')).toBeInTheDocument();
-    await userEvent.click(screen.getByTitle('Archive selected history'));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const historyList = screen.getByTestId('task-list-history');
     await userEvent.click(within(historyList).getByLabelText('Select history history-active'));
     await userEvent.click(screen.getByRole('button', { name: 'Archive (1)' }));
@@ -492,7 +563,7 @@ describe('App', () => {
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     expect(await screen.findByText('active markdown')).toBeInTheDocument();
-    await userEvent.click(screen.getByTitle('Archive selected history'));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const historyList = screen.getByTestId('task-list-history');
     await userEvent.click(within(historyList).getByLabelText('Select history history-active'));
     await userEvent.click(screen.getByRole('button', { name: 'Archive (1)' }));
@@ -527,7 +598,7 @@ describe('App', () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
-    await userEvent.click(screen.getByTitle('Archive selected history'));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     await userEvent.click(screen.getByRole('button', { name: 'Select all' }));
     expect(screen.getByRole('button', { name: 'Archive (2)' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Invert' }));
@@ -619,8 +690,9 @@ describe('App', () => {
     });
     apiMocks.fetchPendingTasks.mockResolvedValue([]);
     apiMocks.fetchHistory.mockResolvedValue([history]);
-    Object.assign(navigator, {
-      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('copy failed')) },
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('copy failed')) },
     });
 
     render(<App />);
@@ -643,14 +715,15 @@ describe('App', () => {
     });
     apiMocks.fetchPendingTasks.mockResolvedValue([]);
     apiMocks.fetchHistory.mockResolvedValue([history]);
-    Object.assign(navigator, {
-      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('copy failed')) },
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('copy failed')) },
     });
 
     render(<App />);
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
-    await userEvent.click(screen.getByTitle('Copy selected history as XML'));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const historyList = screen.getByTestId('task-list-history');
     await userEvent.click(within(historyList).getByLabelText('Select history history-1'));
     await userEvent.click(screen.getByRole('button', { name: 'Copy (1)' }));
@@ -705,6 +778,32 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: /Back/ }));
     await userEvent.click(screen.getByTitle('Open archived history'));
     expect(apiMocks.fetchArchivedHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('expands and collapses archived groups from the archived toolbar', async () => {
+    const user = userEvent.setup();
+    const archived = task({
+      task_id: 'archived-winter',
+      session_id: 'winter',
+      session_display_name: 'Winter',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      archived_at: '2026-06-05T03:00:00Z',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([]);
+    apiMocks.fetchHistory.mockResolvedValue([]);
+    apiMocks.fetchArchivedHistory.mockResolvedValue([archived]);
+
+    render(<App />);
+
+    await user.click(await screen.findByRole('tab', { name: 'History' }));
+    await user.click(screen.getByRole('button', { name: 'Open archived history' }));
+
+    await user.click(await screen.findByRole('button', { name: 'Collapse all groups' }));
+    expect(screen.getByTestId('archived-collapsed-winter')).toHaveTextContent('collapsed');
+
+    await user.click(screen.getByRole('button', { name: 'Expand all groups' }));
+    expect(screen.getByTestId('archived-collapsed-winter')).toHaveTextContent('expanded');
   });
 
   it('refreshes archived history after archiving when the archived view was already loaded', async () => {
@@ -838,7 +937,7 @@ describe('App', () => {
     await userEvent.click(screen.getByTitle('Open archived history'));
     const archivedList = await screen.findByTestId('task-list-archived');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     await userEvent.click(within(archivedList).getByLabelText('Select archived archived-1'));
     await userEvent.click(screen.getByRole('button', { name: 'Restore (1)' }));
     await waitFor(() =>
@@ -889,7 +988,7 @@ describe('App', () => {
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     expect(await screen.findByTestId('history-history-stale')).toBeInTheDocument();
     await userEvent.click(screen.getByTitle('Open archived history'));
-    await userEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const archivedList = await screen.findByTestId('task-list-archived');
     await userEvent.click(within(archivedList).getByLabelText('Select archived archived-1'));
     await userEvent.click(screen.getByRole('button', { name: 'Restore (1)' }));
@@ -930,7 +1029,7 @@ describe('App', () => {
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     await userEvent.click(screen.getByTitle('Open archived history'));
     expect(await screen.findByText('archived active markdown')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const archivedList = await screen.findByTestId('task-list-archived');
     await userEvent.click(within(archivedList).getByLabelText('Select archived archived-active'));
     await userEvent.click(screen.getByRole('button', { name: 'Restore (1)' }));
@@ -960,7 +1059,7 @@ describe('App', () => {
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     await userEvent.click(screen.getByTitle('Open archived history'));
     expect(await screen.findByText('archived active markdown')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const archivedList = await screen.findByTestId('task-list-archived');
     await userEvent.click(within(archivedList).getByLabelText('Select archived archived-active'));
     await userEvent.click(screen.getByRole('button', { name: 'Restore (1)' }));
@@ -1002,7 +1101,7 @@ describe('App', () => {
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     await userEvent.click(screen.getByTitle('Open archived history'));
     expect(await screen.findByText('restored archived markdown')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const archivedList = await screen.findByTestId('task-list-archived');
     await userEvent.click(within(archivedList).getByLabelText('Select archived archived-restored'));
     await userEvent.click(screen.getByRole('button', { name: 'Restore (1)' }));
@@ -1038,7 +1137,7 @@ describe('App', () => {
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     await userEvent.click(screen.getByTitle('Open archived history'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Restore' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Select' }));
     await userEvent.click(screen.getByRole('button', { name: 'Select all' }));
     expect(screen.getByRole('button', { name: 'Restore (2)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy (2)' })).toBeDisabled();

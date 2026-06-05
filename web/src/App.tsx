@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   Bell,
   CheckSquare,
+  ChevronsDown,
+  ChevronsRight,
   ClipboardCopy,
   Inbox,
   Radio,
@@ -41,6 +43,10 @@ const defaultMarkdownSettings: MarkdownSettings = {
 
 const historyPageSize = 80;
 
+function loadedSessionIds(tasks: Task[]) {
+  return Array.from(new Set(tasks.map((task) => task.session_id)));
+}
+
 function loadJSON<T>(key: string, fallback: T): T {
   const value = localStorage.getItem(key);
   if (!value) {
@@ -65,6 +71,12 @@ function App() {
   const [submittingTaskId, setSubmittingTaskId] = useState<string | undefined>();
   const [selectedHistoryIds, setSelectedHistoryIds] = useState(() => new Set<string>());
   const [selectedArchivedIds, setSelectedArchivedIds] = useState(() => new Set<string>());
+  const [collapsedHistorySessionIds, setCollapsedHistorySessionIds] = useState(
+    () => new Set<string>(),
+  );
+  const [collapsedArchivedSessionIds, setCollapsedArchivedSessionIds] = useState(
+    () => new Set<string>(),
+  );
   const [replyMode, setReplyMode] = useState(false);
   const [historySelectionMode, setHistorySelectionMode] = useState(false);
   const [archivedLoaded, setArchivedLoaded] = useState(false);
@@ -241,6 +253,8 @@ function App() {
 
   const visibleHistoryTasks = historyView === 'archived' ? archivedTasks : historyTasks;
   const selectedIds = historyView === 'archived' ? selectedArchivedIds : selectedHistoryIds;
+  const collapsedSessionIds =
+    historyView === 'archived' ? collapsedArchivedSessionIds : collapsedHistorySessionIds;
 
   const exportTasks = async (tasks: Task[]) => {
     setError(undefined);
@@ -364,6 +378,38 @@ function App() {
     setHistorySelectionMode(true);
   };
 
+  const toggleHistoryGroupCollapsed = (sessionId: string) => {
+    const setCollapsed =
+      historyView === 'archived' ? setCollapsedArchivedSessionIds : setCollapsedHistorySessionIds;
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
+      } else {
+        next.add(sessionId);
+      }
+      return next;
+    });
+  };
+
+  const expandAllGroups = () => {
+    if (historyView === 'archived') {
+      setCollapsedArchivedSessionIds(new Set());
+    } else {
+      setCollapsedHistorySessionIds(new Set());
+    }
+  };
+
+  const collapseAllGroups = () => {
+    const source = historyView === 'archived' ? archivedTasks : historyTasks;
+    const sessionIds = loadedSessionIds(source);
+    if (historyView === 'archived') {
+      setCollapsedArchivedSessionIds(new Set(sessionIds));
+    } else {
+      setCollapsedHistorySessionIds(new Set(sessionIds));
+    }
+  };
+
   const openArchivedHistory = async () => {
     setError(undefined);
     setHistorySelectionMode(false);
@@ -394,11 +440,21 @@ function App() {
     setError(undefined);
     try {
       if (historyView === 'archived') {
+        const existingSessionIds = new Set(archivedTasks.map((task) => task.session_id));
         const nextPage = await fetchArchivedHistory(historyPageSize, archivedTasks.length);
         setArchivedTasks((current) => [...current, ...nextPage]);
+        const newSessionIds = nextPage
+          .map((task) => task.session_id)
+          .filter((sessionId) => !existingSessionIds.has(sessionId));
+        setCollapsedArchivedSessionIds((current) => new Set([...current, ...newSessionIds]));
       } else {
+        const existingSessionIds = new Set(historyTasks.map((task) => task.session_id));
         const nextPage = await fetchHistory(historyPageSize, historyTasks.length);
         setHistoryTasks((current) => [...current, ...nextPage]);
+        const newSessionIds = nextPage
+          .map((task) => task.session_id)
+          .filter((sessionId) => !existingSessionIds.has(sessionId));
+        setCollapsedHistorySessionIds((current) => new Set([...current, ...newSessionIds]));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -542,12 +598,32 @@ function App() {
                         <button
                           type="button"
                           className="tool-button"
+                          onClick={expandAllGroups}
+                          title="Expand all groups"
+                          aria-label="Expand all groups"
+                        >
+                          <ChevronsDown size={15} />
+                          Expand all
+                        </button>
+                        <button
+                          type="button"
+                          className="tool-button"
+                          onClick={collapseAllGroups}
+                          title="Collapse all groups"
+                          aria-label="Collapse all groups"
+                        >
+                          <ChevronsRight size={15} />
+                          Collapse all
+                        </button>
+                        <button
+                          type="button"
+                          className="tool-button"
                           disabled={archivedTasks.length === 0}
                           onClick={enterHistorySelectionMode}
-                          title="Restore selected archived tasks"
+                          title="Select archived tasks"
                         >
-                          <RotateCcw size={15} />
-                          Restore
+                          <CheckSquare size={15} />
+                          Select
                         </button>
                       </>
                     ) : (
@@ -555,28 +631,39 @@ function App() {
                         <button
                           type="button"
                           className="tool-button"
-                          disabled={historyTasks.length === 0}
-                          onClick={enterHistorySelectionMode}
-                          title="Copy selected history as XML"
+                          onClick={expandAllGroups}
+                          title="Expand all groups"
+                          aria-label="Expand all groups"
                         >
-                          <ClipboardCopy size={15} />
-                          Export
+                          <ChevronsDown size={15} />
+                          Expand all
+                        </button>
+                        <button
+                          type="button"
+                          className="tool-button"
+                          onClick={collapseAllGroups}
+                          title="Collapse all groups"
+                          aria-label="Collapse all groups"
+                        >
+                          <ChevronsRight size={15} />
+                          Collapse all
                         </button>
                         <button
                           type="button"
                           className="tool-button"
                           disabled={historyTasks.length === 0}
                           onClick={enterHistorySelectionMode}
-                          title="Archive selected history"
+                          title="Select history tasks"
                         >
-                          <Archive size={15} />
-                          Archive
+                          <CheckSquare size={15} />
+                          Select
                         </button>
                         <button
                           type="button"
                           className="tool-button"
                           onClick={() => void openArchivedHistory()}
                           title="Open archived history"
+                          aria-label="Open archived history"
                         >
                           <Archive size={15} />
                           Archived
@@ -589,6 +676,7 @@ function App() {
               {tab === 'history' && historySelectionMode ? (
                 <div className="export-toolbar">
                   <div className="export-toolbar-left">
+                    <span className="selection-count">{selectedIds.size} selected</span>
                     <button type="button" className="tool-button" onClick={selectAllHistory}>
                       <CheckSquare size={15} />
                       Select all
@@ -647,6 +735,7 @@ function App() {
                   activeTaskId={activeTask?.task_id}
                   submittingTaskId={submittingTaskId}
                   selectedIds={emptySelection}
+                  collapsedSessionIds={emptySelection}
                   onSelectTask={selectTask}
                   onQuickReply={(task, value) => handleSubmit(task, value, 'quick_paste')}
                   onRenameSession={handleRenameSession}
@@ -660,11 +749,13 @@ function App() {
                   selectionMode={historySelectionMode}
                   activeTaskId={activeTask?.task_id}
                   selectedIds={selectedIds}
+                  collapsedSessionIds={collapsedSessionIds}
                   onSelectTask={selectTask}
                   onQuickReply={(task, value) => handleSubmit(task, value, 'quick_paste')}
                   onRenameSession={handleRenameSession}
                   onToggleTaskSelection={toggleTaskSelection}
                   onToggleGroupSelection={toggleGroupSelection}
+                  onToggleGroupCollapsed={toggleHistoryGroupCollapsed}
                   onExportGroup={async (tasks) => {
                     await exportTasks(tasks);
                   }}
