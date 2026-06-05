@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -52,7 +53,20 @@ func run() error {
 
 	errs := make(chan error, 1)
 	go func() {
-		slog.Info("AskUser Popup daemon listening", "addr", cfg.Addr, "database", cfg.DatabasePath)
+		access := buildAccessURLs(cfg.Addr, net.InterfaceAddrs)
+		slog.Info(
+			"AskUser Popup daemon listening",
+			"addr",
+			cfg.Addr,
+			"local_url",
+			access.LocalURL,
+			"lan_urls",
+			access.LANURLs,
+			"lan_hint",
+			access.LANHint,
+			"database",
+			cfg.DatabasePath,
+		)
 		errs <- server.ListenAndServe()
 	}()
 

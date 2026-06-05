@@ -5,8 +5,8 @@ import "testing"
 func TestDefaultDaemonConfig(t *testing.T) {
 	cfg := DefaultDaemonConfig()
 
-	if cfg.Addr != "127.0.0.1:8765" {
-		t.Fatalf("addr = %q, want 127.0.0.1:8765", cfg.Addr)
+	if cfg.Addr != "0.0.0.0:8765" {
+		t.Fatalf("addr = %q, want 0.0.0.0:8765", cfg.Addr)
 	}
 	if cfg.DatabasePath == "" {
 		t.Fatal("database path should not be empty")

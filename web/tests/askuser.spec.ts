@@ -117,6 +117,52 @@ async function expectGroupHeaderContentDoesNotOverlapControls(row: Locator) {
   expect(result, result.reason).toMatchObject({ ok: true });
 }
 
+async function expectHistoryControlsAreOwnedBySidebar(page: {
+  locator: (selector: string) => Locator;
+}) {
+  const result = await page.locator('.workspace').evaluate(() => {
+    const panel = document.querySelector('.task-panel');
+    const detail = document.querySelector('.detail-workspace');
+    const header = document.querySelector('.history-sidebar-header');
+    const toolbar = document.querySelector('.history-toolstrip');
+    if (!panel || !detail || !header || !toolbar) {
+      return { ok: false, reason: 'missing panel, detail, history header, or history toolstrip' };
+    }
+
+    const panelBox = panel.getBoundingClientRect();
+    const detailBox = detail.getBoundingClientRect();
+    const headerBox = header.getBoundingClientRect();
+    const toolbarBox = toolbar.getBoundingClientRect();
+    const epsilon = 1;
+    const staysInsidePanel = (box: DOMRect) =>
+      box.left + epsilon >= panelBox.left &&
+      box.right <= panelBox.right + epsilon &&
+      box.top + epsilon >= panelBox.top &&
+      box.bottom <= panelBox.bottom + epsilon;
+    const overlapsDetail = (box: DOMRect) =>
+      box.left < detailBox.right - epsilon &&
+      box.right > detailBox.left + epsilon &&
+      box.top < detailBox.bottom - epsilon &&
+      box.bottom > detailBox.top + epsilon;
+
+    return {
+      ok:
+        staysInsidePanel(headerBox) &&
+        staysInsidePanel(toolbarBox) &&
+        !overlapsDetail(headerBox) &&
+        !overlapsDetail(toolbarBox),
+      reason: JSON.stringify({
+        panel: panelBox.toJSON(),
+        detail: detailBox.toJSON(),
+        header: headerBox.toJSON(),
+        toolbar: toolbarBox.toJSON(),
+      }),
+    };
+  });
+
+  expect(result, result.reason).toMatchObject({ ok: true });
+}
+
 test('renders wide Markdown, opens reply mode, and shows completed user reply history', async ({
   page,
   request,
@@ -253,6 +299,7 @@ test('groups sessions and runs archive workflow in the browser', async ({
   await expect(page.locator('.task-group-row').filter({ hasText: renamedDisplayName })).toBeVisible();
 
   await page.getByRole('tab', { name: 'History' }).click();
+  await expectHistoryControlsAreOwnedBySidebar(page);
   const springGroups = page.locator('.task-group-row').filter({ hasText: '春天' });
   await expect(springGroups).toHaveCount(2);
   await expect(page.getByRole('button', { name: /Collapse 春天/ }).first()).toBeVisible();
@@ -295,6 +342,7 @@ test('groups sessions and runs archive workflow in the browser', async ({
   await expect(page.getByRole('button', { name: /History grouped spring/ })).toHaveCount(0);
 
   await page.getByTitle('Open archived history').click();
+  await expectHistoryControlsAreOwnedBySidebar(page);
   await expect(page.getByText('Archived History')).toBeVisible();
   await expect(page.getByRole('button', { name: /Archived winter task/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /History grouped spring/ })).toBeVisible();

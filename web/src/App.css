@@ -194,73 +194,62 @@
   align-items: center;
 }
 
-.history-heading-actions,
-.export-toolbar,
-.export-toolbar-left,
-.export-toolbar-right {
+.history-sidebar-header {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #ffffff 0%, var(--surface-subtle) 100%);
+}
+
+.history-sidebar-header.is-selecting {
+  background: #f8fbff;
+}
+
+.history-sidebar-title-row {
+  display: flex;
   align-items: center;
   min-width: 0;
-  gap: 6px;
+  gap: 8px;
 }
 
-.history-heading-actions,
-.export-toolbar-left,
-.export-toolbar-right {
-  display: inline-flex;
+.history-sidebar-title {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
 }
 
-.history-heading-actions,
-.export-toolbar-right {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.history-heading-actions {
-  justify-content: flex-end;
-}
-
-.selection-count {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 0 6px;
-  color: var(--text-muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.history-view-label {
-  max-width: 120px;
+.history-sidebar-title strong {
   overflow: hidden;
-  color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.export-toolbar {
+.history-sidebar-title span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-back-button {
+  flex-shrink: 0;
+}
+
+.history-toolstrip {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  min-width: 0;
 }
 
-.export-toolbar-left,
-.export-toolbar-right {
-  width: 100%;
-}
-
-.export-toolbar-left {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-
-.export-toolbar-right {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+.selection-toolstrip {
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
 }
 
 .tabs-list {
@@ -305,7 +294,7 @@
   font-size: 12px;
 }
 
-.export-toolbar-right .tool-button {
+.history-toolstrip .tool-button {
   width: 100%;
   min-width: 0;
 }
@@ -864,10 +853,5 @@
 
   .tabs-heading {
     flex-wrap: wrap;
-  }
-
-  .history-heading-actions {
-    width: 100%;
-    justify-content: flex-start;
   }
 }

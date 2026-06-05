@@ -9,7 +9,7 @@ type DaemonConfig struct {
 
 func DefaultDaemonConfig() DaemonConfig {
 	return DaemonConfig{
-		Addr:         "127.0.0.1:8765",
+		Addr:         "0.0.0.0:8765",
 		DatabasePath: "askuser-popup.db",
 	}
 }

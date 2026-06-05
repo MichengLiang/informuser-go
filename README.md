@@ -38,16 +38,18 @@ Start the local daemon:
 go run ./cmd/popupd
 ```
 
-Open:
+The startup log prints clickable browser URLs. Open the local URL on this machine,
+or a LAN URL from another device on the same network:
 
 ```text
 http://127.0.0.1:8765
+http://<your-lan-ip>:8765
 ```
 
 The daemon can be configured with:
 
 ```bash
-ASKUSER_ADDR=127.0.0.1:8765
+ASKUSER_ADDR=0.0.0.0:8765
 ASKUSER_DB=askuser-popup.db
 ```
 

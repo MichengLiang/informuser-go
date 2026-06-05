@@ -255,6 +255,9 @@ function App() {
   const selectedIds = historyView === 'archived' ? selectedArchivedIds : selectedHistoryIds;
   const collapsedSessionIds =
     historyView === 'archived' ? collapsedArchivedSessionIds : collapsedHistorySessionIds;
+  const visibleHistoryGroupCount = loadedSessionIds(visibleHistoryTasks).length;
+  const historyPanelTitle = historyView === 'archived' ? 'Archived History' : 'History';
+  const historyPanelMeta = `${visibleHistoryGroupCount} groups · ${visibleHistoryTasks.length} loaded`;
 
   const exportTasks = async (tasks: Task[]) => {
     setError(undefined);
@@ -581,83 +584,126 @@ function App() {
                   <Tabs.Trigger value="pending">Pending</Tabs.Trigger>
                   <Tabs.Trigger value="history">History</Tabs.Trigger>
                 </Tabs.List>
-                {tab === 'history' ? (
-                  <div className="history-heading-actions">
-                    {historyView === 'archived' ? (
-                      <>
+              </div>
+              {tab === 'history' ? (
+                <div
+                  className={`history-sidebar-header ${historySelectionMode ? 'is-selecting' : ''}`}
+                >
+                  <div className="history-sidebar-title-row">
+                    {historyView === 'archived' && !historySelectionMode ? (
+                      <button
+                        type="button"
+                        className="tool-button history-back-button"
+                        onClick={backToMainHistory}
+                        title="Back to main history"
+                      >
+                        <ArrowLeft size={15} />
+                        Back
+                      </button>
+                    ) : null}
+                    <div className="history-sidebar-title">
+                      <strong>
+                        {historySelectionMode ? `${selectedIds.size} selected` : historyPanelTitle}
+                      </strong>
+                      <span>
+                        {historySelectionMode
+                          ? historyView === 'archived'
+                            ? 'Archived selection'
+                            : 'History selection'
+                          : historyPanelMeta}
+                      </span>
+                    </div>
+                  </div>
+                  {historySelectionMode ? (
+                    <div className="history-toolstrip selection-toolstrip">
+                      <button type="button" className="tool-button" onClick={selectAllHistory}>
+                        <CheckSquare size={15} />
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        className="tool-button"
+                        onClick={invertHistorySelection}
+                      >
+                        <Shuffle size={15} />
+                        Invert
+                      </button>
+                      <button
+                        type="button"
+                        className="tool-button"
+                        disabled={selectedIds.size === 0 || historyView === 'archived'}
+                        onClick={() => void exportSelected()}
+                      >
+                        <ClipboardCopy size={15} />
+                        Copy ({selectedIds.size})
+                      </button>
+                      {historyView === 'archived' ? (
                         <button
                           type="button"
                           className="tool-button"
-                          onClick={backToMainHistory}
-                          title="Back to main history"
+                          disabled={selectedIds.size === 0}
+                          onClick={() => void restoreSelected()}
                         >
-                          <ArrowLeft size={15} />
-                          Back
+                          <RotateCcw size={15} />
+                          Restore ({selectedIds.size})
                         </button>
-                        <span className="history-view-label">Archived History</span>
+                      ) : (
                         <button
                           type="button"
                           className="tool-button"
-                          onClick={expandAllGroups}
-                          title="Expand all groups"
-                          aria-label="Expand all groups"
+                          disabled={selectedIds.size === 0}
+                          onClick={() => void archiveSelected()}
                         >
-                          <ChevronsDown size={15} />
-                          Expand all
+                          <Archive size={15} />
+                          Archive ({selectedIds.size})
                         </button>
-                        <button
-                          type="button"
-                          className="tool-button"
-                          onClick={collapseAllGroups}
-                          title="Collapse all groups"
-                          aria-label="Collapse all groups"
-                        >
-                          <ChevronsRight size={15} />
-                          Collapse all
-                        </button>
-                        <button
-                          type="button"
-                          className="tool-button"
-                          disabled={archivedTasks.length === 0}
-                          onClick={enterHistorySelectionMode}
-                          title="Select archived tasks"
-                        >
-                          <CheckSquare size={15} />
-                          Select
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="tool-button"
-                          onClick={expandAllGroups}
-                          title="Expand all groups"
-                          aria-label="Expand all groups"
-                        >
-                          <ChevronsDown size={15} />
-                          Expand all
-                        </button>
-                        <button
-                          type="button"
-                          className="tool-button"
-                          onClick={collapseAllGroups}
-                          title="Collapse all groups"
-                          aria-label="Collapse all groups"
-                        >
-                          <ChevronsRight size={15} />
-                          Collapse all
-                        </button>
-                        <button
-                          type="button"
-                          className="tool-button"
-                          disabled={historyTasks.length === 0}
-                          onClick={enterHistorySelectionMode}
-                          title="Select history tasks"
-                        >
-                          <CheckSquare size={15} />
-                          Select
-                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="tool-button"
+                        onClick={exitHistorySelectionMode}
+                      >
+                        <X size={15} />
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="history-toolstrip">
+                      <button
+                        type="button"
+                        className="tool-button"
+                        onClick={expandAllGroups}
+                        title="Expand all groups"
+                        aria-label="Expand all groups"
+                      >
+                        <ChevronsDown size={15} />
+                        Expand all
+                      </button>
+                      <button
+                        type="button"
+                        className="tool-button"
+                        onClick={collapseAllGroups}
+                        title="Collapse all groups"
+                        aria-label="Collapse all groups"
+                      >
+                        <ChevronsRight size={15} />
+                        Collapse all
+                      </button>
+                      <button
+                        type="button"
+                        className="tool-button"
+                        disabled={visibleHistoryTasks.length === 0}
+                        onClick={enterHistorySelectionMode}
+                        title={
+                          historyView === 'archived'
+                            ? 'Select archived tasks'
+                            : 'Select history tasks'
+                        }
+                      >
+                        <CheckSquare size={15} />
+                        Select
+                      </button>
+                      {historyView === 'main' ? (
                         <button
                           type="button"
                           className="tool-button"
@@ -668,64 +714,9 @@ function App() {
                           <Archive size={15} />
                           Archived
                         </button>
-                      </>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-              {tab === 'history' && historySelectionMode ? (
-                <div className="export-toolbar">
-                  <div className="export-toolbar-left">
-                    <span className="selection-count">{selectedIds.size} selected</span>
-                    <button type="button" className="tool-button" onClick={selectAllHistory}>
-                      <CheckSquare size={15} />
-                      Select all
-                    </button>
-                    <button type="button" className="tool-button" onClick={invertHistorySelection}>
-                      <Shuffle size={15} />
-                      Invert
-                    </button>
-                  </div>
-                  <div className="export-toolbar-right">
-                    <button
-                      type="button"
-                      className="tool-button"
-                      disabled={selectedIds.size === 0 || historyView === 'archived'}
-                      onClick={() => void exportSelected()}
-                    >
-                      <ClipboardCopy size={15} />
-                      Copy ({selectedIds.size})
-                    </button>
-                    {historyView === 'archived' ? (
-                      <button
-                        type="button"
-                        className="tool-button"
-                        disabled={selectedIds.size === 0}
-                        onClick={() => void restoreSelected()}
-                      >
-                        <RotateCcw size={15} />
-                        Restore ({selectedIds.size})
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="tool-button"
-                        disabled={selectedIds.size === 0}
-                        onClick={() => void archiveSelected()}
-                      >
-                        <Archive size={15} />
-                        Archive ({selectedIds.size})
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="tool-button"
-                      onClick={exitHistorySelectionMode}
-                    >
-                      <X size={15} />
-                      Cancel
-                    </button>
-                  </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
               ) : null}
               <Tabs.Content value="pending">
