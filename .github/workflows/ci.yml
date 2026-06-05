@@ -55,9 +55,6 @@ jobs:
       - name: Run Biome check
         run: pnpm --dir web check
 
-      - name: Run ESLint
-        run: pnpm --dir web lint
-
       - name: Run web coverage tests
         run: pnpm --dir web test:coverage
 

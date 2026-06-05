@@ -22,3 +22,4 @@ No changes yet.
 ### Changed
 
 - Default daemon binding is `0.0.0.0:8765` so LAN URLs printed at startup are usable.
+- Frontend static analysis uses Biome as the single lint/check tool.

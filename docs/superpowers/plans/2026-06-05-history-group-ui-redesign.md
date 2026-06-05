@@ -94,7 +94,6 @@ Use these commands as appropriate per task:
 
 ```bash
 pnpm --dir web check
-pnpm --dir web lint
 pnpm --dir web test:coverage
 pnpm --dir web build
 pnpm --dir web sync:embed
@@ -1285,7 +1284,6 @@ Run:
 
 ```bash
 pnpm --dir web check
-pnpm --dir web lint
 pnpm --dir web test:coverage
 pnpm --dir web build
 pnpm --dir web sync:embed
@@ -1294,7 +1292,6 @@ pnpm --dir web test:e2e
 
 Expected:
 - All commands pass.
-- `lint` may still report the existing `web/coverage/lcov-report/*` warnings with exit code 0.
 
 - [ ] **Step 7: Commit Task 5**
 
@@ -1323,7 +1320,6 @@ The coordinator must verify:
 go test ./...
 ./scripts/check_go_coverage.sh
 pnpm --dir web check
-pnpm --dir web lint
 pnpm --dir web test:coverage
 pnpm --dir web build
 pnpm --dir web sync:embed

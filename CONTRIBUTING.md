@@ -32,7 +32,6 @@ Before opening a pull request, run:
 go test ./...
 ./scripts/check_go_coverage.sh
 pnpm --dir web check
-pnpm --dir web lint
 pnpm --dir web test:coverage
 pnpm --dir web build
 pnpm --dir web sync:embed
@@ -57,4 +56,3 @@ Use concise conventional-style prefixes where they fit:
 - `test:` for test-only changes.
 - `docs:` for documentation.
 - `build:` for generated assets or release tooling.
-
