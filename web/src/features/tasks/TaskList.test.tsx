@@ -91,7 +91,7 @@ describe('TaskList', () => {
     });
 
     await userEvent.click(screen.getByRole('button', { name: /need review/i }));
-    expect(onSelectTask).toHaveBeenCalledWith(currentTask);
+    await waitFor(() => expect(onSelectTask).toHaveBeenCalledWith(currentTask));
 
     fireEvent.paste(screen.getByPlaceholderText('Paste here to send'), {
       clipboardData: { getData: () => 'quick reply' },
@@ -152,8 +152,62 @@ describe('TaskList', () => {
     });
 
     await userEvent.click(screen.getByRole('button', { name: /open task need review/i }));
-    expect(onSelectTask).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onSelectTask).toHaveBeenCalledTimes(1));
     expect(onSelectTask).toHaveBeenCalledWith(currentTask);
+  });
+
+  it('copies a pending task summary when the row is double-clicked', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const currentTask = task({ title: 'Go module release notes' });
+    const onSelectTask = vi.fn();
+
+    renderTaskList({
+      tasks: [currentTask],
+      activeTaskId: 'task-1',
+      mode: 'pending',
+      onSelectTask,
+    });
+
+    await user.dblClick(screen.getByRole('button', { name: /open task go module release notes/i }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Go module release notes'));
+    expect(onSelectTask).not.toHaveBeenCalled();
+  });
+
+  it('copies a history task summary when the row is double-clicked without toggling selection', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const currentTask = task({
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      title: 'Go module release notes',
+    });
+    const onSelectTask = vi.fn();
+    const onToggleTaskSelection = vi.fn();
+
+    renderTaskList({
+      tasks: [currentTask],
+      activeTaskId: 'other-task',
+      mode: 'history',
+      selectionMode: true,
+      onSelectTask,
+      onToggleTaskSelection,
+    });
+
+    await user.dblClick(screen.getByRole('button', { name: /open task go module release notes/i }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('Go module release notes'));
+    expect(onSelectTask).not.toHaveBeenCalled();
+    expect(onToggleTaskSelection).not.toHaveBeenCalled();
   });
 
   it('does not select a history task twice when toggling export selection', async () => {

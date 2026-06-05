@@ -6,7 +6,9 @@ The project follows semantic versioning once public releases begin.
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+- Task rows can copy their summary to the clipboard with a double-click.
 
 ## [0.1.0] - 2026-06-05
 

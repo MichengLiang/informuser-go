@@ -16,7 +16,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import type { CSSProperties } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from '../../lib/api';
 import { QuickPasteReply } from '../reply/QuickPasteReply';
 
@@ -120,6 +120,7 @@ export function TaskList({
   onUnarchiveGroup,
 }: TaskListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const selectTaskTimerRef = useRef<number | undefined>(undefined);
   const groups = useMemo(() => buildTaskGroups(tasks, mode), [tasks, mode]);
   const safeCollapsedSessionIds = collapsedSessionIds ?? EMPTY_COLLAPSED_SESSION_IDS;
   const items = useMemo(
@@ -138,6 +139,31 @@ export function TaskList({
     },
     overscan: 8,
   });
+
+  const copyTaskSummary = async (task: Task) => {
+    try {
+      await navigator.clipboard.writeText(task.title);
+    } catch {
+      // Clipboard availability is browser/permission dependent; row selection should remain unaffected.
+    }
+  };
+
+  const clearSelectTaskTimer = useCallback(() => {
+    if (selectTaskTimerRef.current !== undefined) {
+      window.clearTimeout(selectTaskTimerRef.current);
+      selectTaskTimerRef.current = undefined;
+    }
+  }, []);
+
+  useEffect(() => clearSelectTaskTimer, [clearSelectTaskTimer]);
+
+  const selectTaskAfterDoubleClickWindow = (task: Task) => {
+    clearSelectTaskTimer();
+    selectTaskTimerRef.current = window.setTimeout(() => {
+      selectTaskTimerRef.current = undefined;
+      onSelectTask(task);
+    }, 180);
+  };
 
   if (tasks.length === 0) {
     return (
@@ -201,7 +227,18 @@ export function TaskList({
               <button
                 type="button"
                 className="task-row-hit-area"
-                onClick={() => onSelectTask(task)}
+                onClick={(event) => {
+                  if (event.detail > 1) {
+                    return;
+                  }
+                  selectTaskAfterDoubleClickWindow(task);
+                }}
+                onDoubleClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  clearSelectTaskTimer();
+                  void copyTaskSummary(task);
+                }}
                 aria-label={`Open task ${task.title}`}
               />
               <div className="task-row-header">

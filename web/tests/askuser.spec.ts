@@ -173,6 +173,9 @@ test('renders wide Markdown, opens reply mode, and shows completed user reply hi
   await expect(page).toHaveTitle('AskUser Popup');
 
   await expect(page.getByRole('button', { name: /Wide Markdown review/ })).toBeVisible();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.getByRole('button', { name: /Wide Markdown review/ }).dblclick();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('Wide Markdown review');
   await expect(page.locator('.markdown-reader')).toContainText('Review request');
   await expect(page.locator('.reply-panel')).toHaveCount(0);
   await expect
@@ -202,7 +205,6 @@ test('renders wide Markdown, opens reply mode, and shows completed user reply hi
   await page.getByRole('button', { name: /Reading/i }).click();
   await page.locator('.settings-popover input[type="range"]').fill('20');
   await expect(page.locator('.markdown-reader')).toHaveCSS('font-size', '20px');
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.getByRole('button', { name: /Copy Markdown/i }).click();
   await expect(page.getByRole('button', { name: /Copied/i })).toBeVisible();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(markdown);
@@ -223,6 +225,8 @@ test('renders wide Markdown, opens reply mode, and shows completed user reply hi
 
   await page.getByRole('tab', { name: 'History' }).click();
   await expect(page.getByRole('button', { name: /Wide Markdown review/ })).toBeVisible();
+  await page.getByRole('button', { name: /Wide Markdown review/ }).dblclick();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('Wide Markdown review');
   await expect(page.getByRole('heading', { name: 'User reply' })).toBeVisible();
   await expect(page.locator('.history-reply-content')).toContainText('Approved from Playwright');
 });
