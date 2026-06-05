@@ -197,8 +197,7 @@
 .history-heading-actions,
 .export-toolbar,
 .export-toolbar-left,
-.export-toolbar-right,
-.task-group-actions {
+.export-toolbar-right {
   display: inline-flex;
   align-items: center;
   min-width: 0;
@@ -212,11 +211,7 @@
 }
 
 .history-heading-actions {
-  display: inline-flex;
-  align-items: center;
   justify-content: flex-end;
-  min-width: 0;
-  gap: 6px;
 }
 
 .selection-count {
@@ -343,11 +338,11 @@
   right: 0;
   left: 0;
   display: block;
-  min-height: 74px;
-  padding: 11px 12px;
-  border-bottom: 1px solid var(--border);
+  min-height: 68px;
+  padding: 10px 12px 10px 34px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: 0;
-  background: transparent;
+  background: var(--surface);
   color: var(--text);
   cursor: pointer;
   text-align: left;
@@ -359,49 +354,58 @@
   left: 0;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  min-height: 48px;
-  padding: 7px 10px 7px 12px;
+  min-height: 54px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface-subtle);
+  background: color-mix(in srgb, var(--surface-subtle) 82%, #ffffff);
 }
 
-.task-group-title {
-  display: grid;
+.task-group-main {
+  display: flex;
   flex: 1;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.task-group-copy {
+  display: grid;
   min-width: 0;
   gap: 2px;
-  margin: 0;
+}
+
+.task-group-name {
+  min-width: 0;
+  overflow: hidden;
   color: var(--text);
   font-size: 13px;
   font-weight: 650;
-  letter-spacing: 0;
-}
-
-.task-group-title span {
-  min-width: 0;
-  overflow: hidden;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-group-title small {
+.task-group-meta {
   min-width: 0;
   overflow: hidden;
   color: var(--text-muted);
   font-size: 11px;
-  font-weight: 500;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-group-actions {
+.task-group-end {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
+  gap: 4px;
 }
 
 .task-group-menu-button,
-.task-group-collapse-button,
-.task-group-action {
+.task-group-collapse-button {
   width: 28px;
   min-width: 28px;
   height: 28px;
@@ -499,10 +503,15 @@
 
 .task-row.selected {
   background: var(--surface-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .task-row:hover {
   background: var(--surface-subtle);
+}
+
+.task-row.selected:hover {
+  background: var(--surface-selected);
 }
 
 .task-row-header {

@@ -130,9 +130,9 @@ export function TaskList({
     estimateSize: (index) => {
       const item = items[index];
       if (item?.type === 'group') {
-        return 48;
+        return 54;
       }
-      return mode === 'pending' ? 112 : 76;
+      return mode === 'pending' ? 108 : 68;
     },
     overscan: 8,
   });
@@ -339,137 +339,138 @@ function SessionGroupHeader({
 
   return (
     <div ref={measureElement} data-index={index} className="task-group-row" style={style}>
-      <button
-        type="button"
-        className="icon-button task-group-collapse-button"
-        onClick={() => onToggleCollapsed?.(group.sessionId)}
-        disabled={!onToggleCollapsed}
-        aria-expanded={!collapsed}
-        aria-label={toggleLabel}
-        title={toggleLabel}
-      >
-        {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
-      </button>
-      {showGroupCheckbox ? (
-        <Checkbox.Root
-          className="group-checkbox"
-          checked={allGroupTasksSelected ? true : partiallySelected ? 'indeterminate' : false}
-          disabled={!onToggleGroupSelection}
-          onCheckedChange={() => onToggleGroupSelection?.(group.sessionId, groupTaskIds)}
-          aria-label={`Select loaded tasks for ${group.displayName}`}
+      <div className="task-group-main">
+        <button
+          type="button"
+          className="icon-button task-group-collapse-button"
+          onClick={() => onToggleCollapsed?.(group.sessionId)}
+          disabled={!onToggleCollapsed}
+          aria-expanded={!collapsed}
+          aria-label={toggleLabel}
+          title={toggleLabel}
         >
-          <Checkbox.Indicator className="group-checkbox-indicator">
-            {partiallySelected ? <Minus size={13} /> : <Check size={13} />}
-          </Checkbox.Indicator>
-        </Checkbox.Root>
-      ) : null}
-      {editing ? (
-        <input
-          ref={inputRef}
-          className="session-rename-input"
-          aria-label="Session display name"
-          value={draft}
-          maxLength={40}
-          disabled={saving}
-          onBlur={() => void save()}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              void save();
-            }
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              cancelEditing();
-            }
-          }}
-        />
-      ) : (
-        <h3
-          className="task-group-title"
-          aria-label={`${group.displayName} · ${group.autoName} · ${group.tasks.length}`}
-        >
-          <span>{group.displayName} ·</span>
-          <small>
-            {showGroupCheckbox
-              ? `${selectedCount}/${group.tasks.length} selected`
-              : `${group.autoName} · ${group.tasks.length}`}
-          </small>
-        </h3>
-      )}
-      <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
-        <DropdownMenu.Trigger asChild>
-          <button
-            type="button"
-            className="icon-button task-group-menu-button"
-            aria-label={`Open ${group.displayName} group actions`}
-            title="Group actions"
+          {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+        </button>
+        {showGroupCheckbox ? (
+          <Checkbox.Root
+            className="group-checkbox"
+            checked={allGroupTasksSelected ? true : partiallySelected ? 'indeterminate' : false}
+            disabled={!onToggleGroupSelection}
+            onCheckedChange={() => onToggleGroupSelection?.(group.sessionId, groupTaskIds)}
+            aria-label={`Select loaded tasks for ${group.displayName}`}
           >
-            <MoreHorizontal size={15} />
-          </button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            className="group-action-menu"
-            align="end"
-            sideOffset={6}
-            onCloseAutoFocus={(event) => {
-              if (preventMenuCloseFocusRef.current) {
-                preventMenuCloseFocusRef.current = false;
+            <Checkbox.Indicator className="group-checkbox-indicator">
+              {partiallySelected ? <Minus size={13} /> : <Check size={13} />}
+            </Checkbox.Indicator>
+          </Checkbox.Root>
+        ) : null}
+        {editing ? (
+          <input
+            ref={inputRef}
+            className="session-rename-input"
+            aria-label="Session display name"
+            value={draft}
+            maxLength={40}
+            disabled={saving}
+            onBlur={() => void save()}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
                 event.preventDefault();
+                void save();
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                cancelEditing();
               }
             }}
-          >
-            <DropdownMenu.Item
-              className="group-action-menu-item"
-              onSelect={(event) => {
-                event.preventDefault();
-                startEditing();
-                setMenuOpen(false);
+          />
+        ) : (
+          <div className="task-group-copy">
+            <strong className="task-group-name">{group.displayName}</strong>
+            <span className="task-group-meta">
+              {showGroupCheckbox
+                ? `${selectedCount}/${group.tasks.length} selected`
+                : `${group.autoName} · ${group.tasks.length} loaded`}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="task-group-end">
+        <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenu.Trigger asChild>
+            <button
+              type="button"
+              className="icon-button task-group-menu-button"
+              aria-label={`Open ${group.displayName} ${group.autoName} group actions`}
+              title="Group actions"
+            >
+              <MoreHorizontal size={15} />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              className="group-action-menu"
+              align="end"
+              sideOffset={6}
+              onCloseAutoFocus={(event) => {
+                if (preventMenuCloseFocusRef.current) {
+                  preventMenuCloseFocusRef.current = false;
+                  event.preventDefault();
+                }
               }}
             >
-              <Pencil size={14} />
-              Rename session
-            </DropdownMenu.Item>
-            {(mode === 'history' || mode === 'archived') && onToggleGroupSelection ? (
               <DropdownMenu.Item
                 className="group-action-menu-item"
-                onSelect={() => onToggleGroupSelection(group.sessionId, groupTaskIds)}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  startEditing();
+                  setMenuOpen(false);
+                }}
               >
-                <CheckSquare size={14} />
-                Select loaded tasks
+                <Pencil size={14} />
+                Rename session
               </DropdownMenu.Item>
-            ) : null}
-            {mode === 'history' && onExportGroup ? (
-              <DropdownMenu.Item
-                className="group-action-menu-item"
-                onSelect={() => void onExportGroup(group.tasks)}
-              >
-                <ClipboardCopy size={14} />
-                Copy loaded group XML
-              </DropdownMenu.Item>
-            ) : null}
-            {mode === 'history' && onArchiveGroup ? (
-              <DropdownMenu.Item
-                className="group-action-menu-item danger"
-                onSelect={() => void onArchiveGroup(group.tasks)}
-              >
-                <Archive size={14} />
-                Archive loaded group
-              </DropdownMenu.Item>
-            ) : null}
-            {mode === 'archived' && onUnarchiveGroup ? (
-              <DropdownMenu.Item
-                className="group-action-menu-item"
-                onSelect={() => void onUnarchiveGroup(group.tasks)}
-              >
-                <RotateCcw size={14} />
-                Restore loaded group
-              </DropdownMenu.Item>
-            ) : null}
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+              {(mode === 'history' || mode === 'archived') && onToggleGroupSelection ? (
+                <DropdownMenu.Item
+                  className="group-action-menu-item"
+                  onSelect={() => onToggleGroupSelection(group.sessionId, groupTaskIds)}
+                >
+                  <CheckSquare size={14} />
+                  Select loaded tasks
+                </DropdownMenu.Item>
+              ) : null}
+              {mode === 'history' && onExportGroup ? (
+                <DropdownMenu.Item
+                  className="group-action-menu-item"
+                  onSelect={() => void onExportGroup(group.tasks)}
+                >
+                  <ClipboardCopy size={14} />
+                  Copy loaded group XML
+                </DropdownMenu.Item>
+              ) : null}
+              {mode === 'history' && onArchiveGroup ? (
+                <DropdownMenu.Item
+                  className="group-action-menu-item danger"
+                  onSelect={() => void onArchiveGroup(group.tasks)}
+                >
+                  <Archive size={14} />
+                  Archive loaded group
+                </DropdownMenu.Item>
+              ) : null}
+              {mode === 'archived' && onUnarchiveGroup ? (
+                <DropdownMenu.Item
+                  className="group-action-menu-item"
+                  onSelect={() => void onUnarchiveGroup(group.tasks)}
+                >
+                  <RotateCcw size={14} />
+                  Restore loaded group
+                </DropdownMenu.Item>
+              ) : null}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
     </div>
   );
 }

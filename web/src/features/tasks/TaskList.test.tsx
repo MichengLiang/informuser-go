@@ -210,8 +210,31 @@ describe('TaskList', () => {
 
     renderTaskList({ tasks: [first, second], mode: 'pending' });
 
-    expect(screen.getByRole('heading', { name: /Spring · S-SPRNG · 1/ })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Summer · S-SUMMR · 1/ })).toBeInTheDocument();
+    expect(screen.getByText('Spring')).toBeInTheDocument();
+    expect(screen.getByText('S-SPRNG · 1 loaded')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Collapse Spring/ })).toBeInTheDocument();
+    expect(screen.getByText('Summer')).toBeInTheDocument();
+    expect(screen.getByText('S-SUMMR · 1 loaded')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Collapse Summer/ })).toBeInTheDocument();
+  });
+
+  it('exposes group headers as collapsible buttons with session metadata', () => {
+    const current = task({
+      task_id: 'history-1',
+      session_id: 'session-a',
+      session_display_name: 'Spring Review',
+      session_auto_name: 'S-SPR1',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+    });
+
+    renderTaskList({ tasks: [current], mode: 'history' });
+
+    expect(screen.getByRole('button', { name: /Collapse Spring Review/ })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(screen.getByText('S-SPR1 · 1 loaded')).toBeInTheDocument();
   });
 
   it('uses separate virtual offsets for group headers and task rows', () => {
@@ -228,14 +251,14 @@ describe('TaskList', () => {
 
     renderTaskList({ tasks: [first, second], mode: 'pending' });
 
-    const groups = screen.getAllByRole('heading');
+    const groups = screen.getAllByRole('button', { name: /Collapse/ });
     expect(groups[0]?.closest('.task-group-row')).toHaveStyle({ transform: 'translateY(0px)' });
     expect(
       screen.getAllByRole('button', { name: /Open task/ })[0]?.closest('.task-row'),
     ).toHaveStyle({
-      transform: 'translateY(48px)',
+      transform: 'translateY(54px)',
     });
-    expect(groups[1]?.closest('.task-group-row')).toHaveStyle({ transform: 'translateY(160px)' });
+    expect(groups[1]?.closest('.task-group-row')).toHaveStyle({ transform: 'translateY(162px)' });
   });
 
   it('aggregates history by session id and keeps duplicate display names separate', () => {
@@ -272,9 +295,15 @@ describe('TaskList', () => {
       mode: 'history',
     });
 
-    expect(screen.getByRole('heading', { name: /Spring · S-AAAAA · 2/ })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Spring · S-BBBBB · 1/ })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Open Spring group actions' })).toHaveLength(2);
+    expect(screen.getAllByText('Spring')).toHaveLength(2);
+    expect(screen.getByText('S-AAAAA · 2 loaded')).toBeInTheDocument();
+    expect(screen.getByText('S-BBBBB · 1 loaded')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Open Spring S-AAAAA group actions' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Open Spring S-BBBBB group actions' }),
+    ).toBeInTheDocument();
   });
 
   it('hides task rows for collapsed history groups while keeping the group header visible', () => {
@@ -343,6 +372,7 @@ describe('TaskList', () => {
       completed_at: '2026-06-05T02:00:00Z',
       session_id: 'session-a',
       session_display_name: 'Spring',
+      session_auto_name: 'S-SPRNG',
     });
     const onToggleGroupSelection = vi.fn();
     const onExportGroup = vi.fn().mockResolvedValue(undefined);
@@ -356,15 +386,15 @@ describe('TaskList', () => {
       onArchiveGroup,
     });
 
-    await user.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await user.click(screen.getByRole('button', { name: 'Open Spring S-SPRNG group actions' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Select loaded tasks' }));
     expect(onToggleGroupSelection).toHaveBeenCalledWith('session-a', ['history-1']);
 
-    await user.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await user.click(screen.getByRole('button', { name: 'Open Spring S-SPRNG group actions' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Copy loaded group XML' }));
     expect(onExportGroup).toHaveBeenCalledWith([groupTask]);
 
-    await user.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await user.click(screen.getByRole('button', { name: 'Open Spring S-SPRNG group actions' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Archive loaded group' }));
     expect(onArchiveGroup).toHaveBeenCalledWith([groupTask]);
   });
@@ -378,6 +408,7 @@ describe('TaskList', () => {
       archived_at: '2026-06-05T03:00:00Z',
       session_id: 'session-a',
       session_display_name: 'Spring',
+      session_auto_name: 'S-SPRNG',
     });
     const onToggleGroupSelection = vi.fn();
     const onUnarchiveGroup = vi.fn().mockResolvedValue(undefined);
@@ -389,11 +420,11 @@ describe('TaskList', () => {
       onUnarchiveGroup,
     });
 
-    await user.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await user.click(screen.getByRole('button', { name: 'Open Spring S-SPRNG group actions' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Select loaded tasks' }));
     expect(onToggleGroupSelection).toHaveBeenCalledWith('session-a', ['archived-1']);
 
-    await user.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await user.click(screen.getByRole('button', { name: 'Open Spring S-SPRNG group actions' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Restore loaded group' }));
     expect(onUnarchiveGroup).toHaveBeenCalledWith([archivedTask]);
   });
@@ -446,7 +477,9 @@ describe('TaskList', () => {
       onRenameSession,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open Spring S-SPRNG group actions' }),
+    );
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename session' }));
     const input = await screen.findByLabelText('Session display name');
     await userEvent.clear(input);
@@ -467,12 +500,14 @@ describe('TaskList', () => {
         }),
     );
     renderTaskList({
-      tasks: [task({ session_display_name: 'Spring' })],
+      tasks: [task({ session_display_name: 'Spring', session_auto_name: 'S-SPRNG' })],
       mode: 'pending',
       onRenameSession,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open Spring S-SPRNG group actions' }),
+    );
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename session' }));
     const input = await screen.findByLabelText('Session display name');
     await userEvent.clear(input);
@@ -490,12 +525,14 @@ describe('TaskList', () => {
   it('does not save when escape is followed by blur', async () => {
     const onRenameSession = vi.fn().mockResolvedValue(undefined);
     renderTaskList({
-      tasks: [task({ session_display_name: 'Spring' })],
+      tasks: [task({ session_display_name: 'Spring', session_auto_name: 'S-SPRNG' })],
       mode: 'pending',
       onRenameSession,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open Spring S-SPRNG group actions' }),
+    );
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename session' }));
     const input = await screen.findByLabelText('Session display name');
     await userEvent.clear(input);
@@ -510,12 +547,14 @@ describe('TaskList', () => {
   it('does not submit blank names on blur', async () => {
     const onRenameSession = vi.fn().mockResolvedValue(undefined);
     renderTaskList({
-      tasks: [task({ session_display_name: 'Spring' })],
+      tasks: [task({ session_display_name: 'Spring', session_auto_name: 'S-SPRNG' })],
       mode: 'pending',
       onRenameSession,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open Spring S-SPRNG group actions' }),
+    );
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename session' }));
     const blankInput = await screen.findByLabelText('Session display name');
     await userEvent.clear(blankInput);
@@ -529,12 +568,14 @@ describe('TaskList', () => {
   it('keeps edited rename text after rejected saves for retry', async () => {
     const onRenameSession = vi.fn().mockRejectedValue(new Error('rename failed'));
     renderTaskList({
-      tasks: [task({ session_display_name: 'Spring' })],
+      tasks: [task({ session_display_name: 'Spring', session_auto_name: 'S-SPRNG' })],
       mode: 'pending',
       onRenameSession,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open Spring S-SPRNG group actions' }),
+    );
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename session' }));
     const input = await screen.findByLabelText('Session display name');
     await userEvent.clear(input);
