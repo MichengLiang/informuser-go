@@ -270,6 +270,7 @@
 }
 
 .tool-button:disabled,
+.icon-button:disabled,
 .primary-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -376,22 +377,75 @@
   white-space: nowrap;
 }
 
-.session-rename-button {
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  padding: 0;
-}
-
 .task-group-actions {
   flex-shrink: 0;
 }
 
+.task-group-menu-button,
+.task-group-collapse-button,
 .task-group-action {
   width: 28px;
   min-width: 28px;
   height: 28px;
   padding: 0;
+}
+
+.group-action-menu {
+  z-index: 60;
+  display: grid;
+  min-width: 190px;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.group-action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+
+.group-action-menu-item[data-highlighted] {
+  background: var(--surface-selected);
+  color: var(--accent);
+}
+
+.group-action-menu-item.danger {
+  color: var(--danger);
+}
+
+.group-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.group-checkbox:focus-visible {
+  outline: 2px solid rgb(37 99 235 / 25%);
+  outline-offset: 2px;
+}
+
+.group-checkbox-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .session-rename-input {

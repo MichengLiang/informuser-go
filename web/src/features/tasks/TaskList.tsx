@@ -1,12 +1,17 @@
+import * as Checkbox from '@radix-ui/react-checkbox';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Archive,
+  Check,
   CheckCircle2,
   CheckSquare,
   ChevronDown,
   ChevronRight,
   ClipboardCopy,
   Clock3,
+  Minus,
+  MoreHorizontal,
   Pencil,
   RotateCcw,
 } from 'lucide-react';
@@ -166,6 +171,8 @@ export function TaskList({
                 group={item.group}
                 collapsed={item.collapsed}
                 mode={mode}
+                selectionMode={selectionMode}
+                selectedIds={selectedIds}
                 onRenameSession={onRenameSession}
                 onToggleGroupSelection={onToggleGroupSelection}
                 onToggleCollapsed={onToggleGroupCollapsed}
@@ -233,6 +240,8 @@ function SessionGroupHeader({
   group,
   collapsed,
   mode,
+  selectionMode,
+  selectedIds,
   onRenameSession,
   onToggleGroupSelection,
   onToggleCollapsed,
@@ -246,6 +255,8 @@ function SessionGroupHeader({
   group: TaskGroup;
   collapsed: boolean;
   mode: 'pending' | 'history' | 'archived';
+  selectionMode: boolean;
+  selectedIds: Set<string>;
   onRenameSession: (sessionId: string, displayName: string) => Promise<void>;
   onToggleGroupSelection?: (sessionId: string, taskIds: string[]) => void;
   onToggleCollapsed?: (sessionId: string) => void;
@@ -257,12 +268,14 @@ function SessionGroupHeader({
   style: CSSProperties;
 }) {
   const [editing, setEditing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [draft, setDraft] = useState(group.displayName);
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const committedNameRef = useRef(group.displayName);
   const closedRef = useRef(false);
   const savingRef = useRef(false);
+  const preventMenuCloseFocusRef = useRef(false);
 
   const startEditing = () => {
     if (savingRef.current) {
@@ -270,6 +283,7 @@ function SessionGroupHeader({
     }
     closedRef.current = false;
     committedNameRef.current = group.displayName;
+    preventMenuCloseFocusRef.current = true;
     setDraft(group.displayName);
     setEditing(true);
   };
@@ -317,7 +331,10 @@ function SessionGroupHeader({
   };
 
   const groupTaskIds = group.tasks.map((task) => task.task_id);
-  const groupLabel = group.displayName;
+  const selectedCount = group.tasks.filter((task) => selectedIds.has(task.task_id)).length;
+  const allGroupTasksSelected = group.tasks.length > 0 && selectedCount === group.tasks.length;
+  const partiallySelected = selectedCount > 0 && selectedCount < group.tasks.length;
+  const showGroupCheckbox = selectionMode && (mode === 'history' || mode === 'archived');
   const toggleLabel = `${collapsed ? 'Expand' : 'Collapse'} ${group.displayName}`;
 
   return (
@@ -326,12 +343,26 @@ function SessionGroupHeader({
         type="button"
         className="icon-button task-group-collapse-button"
         onClick={() => onToggleCollapsed?.(group.sessionId)}
+        disabled={!onToggleCollapsed}
         aria-expanded={!collapsed}
         aria-label={toggleLabel}
         title={toggleLabel}
       >
         {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
       </button>
+      {showGroupCheckbox ? (
+        <Checkbox.Root
+          className="group-checkbox"
+          checked={allGroupTasksSelected ? true : partiallySelected ? 'indeterminate' : false}
+          disabled={!onToggleGroupSelection}
+          onCheckedChange={() => onToggleGroupSelection?.(group.sessionId, groupTaskIds)}
+          aria-label={`Select loaded tasks for ${group.displayName}`}
+        >
+          <Checkbox.Indicator className="group-checkbox-indicator">
+            {partiallySelected ? <Minus size={13} /> : <Check size={13} />}
+          </Checkbox.Indicator>
+        </Checkbox.Root>
+      ) : null}
       {editing ? (
         <input
           ref={inputRef}
@@ -360,72 +391,85 @@ function SessionGroupHeader({
         >
           <span>{group.displayName} ·</span>
           <small>
-            {group.autoName} · {group.tasks.length}
+            {showGroupCheckbox
+              ? `${selectedCount}/${group.tasks.length} selected`
+              : `${group.autoName} · ${group.tasks.length}`}
           </small>
         </h3>
       )}
-      {mode === 'history' ? (
-        <div className="task-group-actions">
+      <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenu.Trigger asChild>
           <button
             type="button"
-            className="icon-button task-group-action"
-            onClick={() => onToggleGroupSelection?.(group.sessionId, groupTaskIds)}
-            title="Select loaded group tasks"
-            aria-label={`Select group ${groupLabel}`}
+            className="icon-button task-group-menu-button"
+            aria-label={`Open ${group.displayName} group actions`}
+            title="Group actions"
           >
-            <CheckSquare size={14} />
+            <MoreHorizontal size={15} />
           </button>
-          <button
-            type="button"
-            className="icon-button task-group-action"
-            onClick={() => void onExportGroup?.(group.tasks)}
-            title="Export loaded group tasks"
-            aria-label={`Export group ${groupLabel}`}
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            className="group-action-menu"
+            align="end"
+            sideOffset={6}
+            onCloseAutoFocus={(event) => {
+              if (preventMenuCloseFocusRef.current) {
+                preventMenuCloseFocusRef.current = false;
+                event.preventDefault();
+              }
+            }}
           >
-            <ClipboardCopy size={14} />
-          </button>
-          <button
-            type="button"
-            className="icon-button task-group-action"
-            onClick={() => void onArchiveGroup?.(group.tasks)}
-            title="Archive loaded group tasks"
-            aria-label={`Archive group ${groupLabel}`}
-          >
-            <Archive size={14} />
-          </button>
-        </div>
-      ) : null}
-      {mode === 'archived' ? (
-        <div className="task-group-actions">
-          <button
-            type="button"
-            className="icon-button task-group-action"
-            onClick={() => onToggleGroupSelection?.(group.sessionId, groupTaskIds)}
-            title="Select loaded group tasks"
-            aria-label={`Select group ${groupLabel}`}
-          >
-            <CheckSquare size={14} />
-          </button>
-          <button
-            type="button"
-            className="icon-button task-group-action"
-            onClick={() => void onUnarchiveGroup?.(group.tasks)}
-            title="Restore loaded group tasks"
-            aria-label={`Restore group ${groupLabel}`}
-          >
-            <RotateCcw size={14} />
-          </button>
-        </div>
-      ) : null}
-      <button
-        type="button"
-        className="icon-button session-rename-button"
-        onClick={startEditing}
-        title="Rename session"
-        aria-label="Rename session"
-      >
-        <Pencil size={14} />
-      </button>
+            <DropdownMenu.Item
+              className="group-action-menu-item"
+              onSelect={(event) => {
+                event.preventDefault();
+                startEditing();
+                setMenuOpen(false);
+              }}
+            >
+              <Pencil size={14} />
+              Rename session
+            </DropdownMenu.Item>
+            {(mode === 'history' || mode === 'archived') && onToggleGroupSelection ? (
+              <DropdownMenu.Item
+                className="group-action-menu-item"
+                onSelect={() => onToggleGroupSelection(group.sessionId, groupTaskIds)}
+              >
+                <CheckSquare size={14} />
+                Select loaded tasks
+              </DropdownMenu.Item>
+            ) : null}
+            {mode === 'history' && onExportGroup ? (
+              <DropdownMenu.Item
+                className="group-action-menu-item"
+                onSelect={() => void onExportGroup(group.tasks)}
+              >
+                <ClipboardCopy size={14} />
+                Copy loaded group XML
+              </DropdownMenu.Item>
+            ) : null}
+            {mode === 'history' && onArchiveGroup ? (
+              <DropdownMenu.Item
+                className="group-action-menu-item danger"
+                onSelect={() => void onArchiveGroup(group.tasks)}
+              >
+                <Archive size={14} />
+                Archive loaded group
+              </DropdownMenu.Item>
+            ) : null}
+            {mode === 'archived' && onUnarchiveGroup ? (
+              <DropdownMenu.Item
+                className="group-action-menu-item"
+                onSelect={() => void onUnarchiveGroup(group.tasks)}
+              >
+                <RotateCcw size={14} />
+                Restore loaded group
+              </DropdownMenu.Item>
+            ) : null}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
     </div>
   );
 }

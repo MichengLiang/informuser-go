@@ -274,7 +274,7 @@ describe('TaskList', () => {
 
     expect(screen.getByRole('heading', { name: /Spring · S-AAAAA · 2/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Spring · S-BBBBB · 1/ })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Rename session' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Open Spring group actions' })).toHaveLength(2);
   });
 
   it('hides task rows for collapsed history groups while keeping the group header visible', () => {
@@ -336,6 +336,7 @@ describe('TaskList', () => {
   });
 
   it('shows loaded group actions for main history groups', async () => {
+    const user = userEvent.setup();
     const groupTask = task({
       task_id: 'history-1',
       status: 'completed',
@@ -355,17 +356,21 @@ describe('TaskList', () => {
       onArchiveGroup,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Select group Spring' }));
+    await user.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Select loaded tasks' }));
     expect(onToggleGroupSelection).toHaveBeenCalledWith('session-a', ['history-1']);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Export group Spring' }));
+    await user.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Copy loaded group XML' }));
     expect(onExportGroup).toHaveBeenCalledWith([groupTask]);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Archive group Spring' }));
+    await user.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Archive loaded group' }));
     expect(onArchiveGroup).toHaveBeenCalledWith([groupTask]);
   });
 
   it('shows loaded group actions for archived groups', async () => {
+    const user = userEvent.setup();
     const archivedTask = task({
       task_id: 'archived-1',
       status: 'completed',
@@ -384,11 +389,48 @@ describe('TaskList', () => {
       onUnarchiveGroup,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Select group Spring' }));
+    await user.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Select loaded tasks' }));
     expect(onToggleGroupSelection).toHaveBeenCalledWith('session-a', ['archived-1']);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Restore group Spring' }));
+    await user.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Restore loaded group' }));
     expect(onUnarchiveGroup).toHaveBeenCalledWith([archivedTask]);
+  });
+
+  it('shows a group checkbox with selected count in history selection mode', async () => {
+    const user = userEvent.setup();
+    const onToggleGroupSelection = vi.fn();
+    const first = task({
+      task_id: 'history-1',
+      session_id: 'session-a',
+      session_display_name: 'Spring',
+      session_auto_name: 'S-SPR1',
+      title: 'First Spring',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+    });
+    const second = task({
+      task_id: 'history-2',
+      session_id: 'session-a',
+      session_display_name: 'Spring',
+      session_auto_name: 'S-SPR1',
+      title: 'Second Spring',
+      status: 'completed',
+      completed_at: '2026-06-05T03:00:00Z',
+    });
+
+    renderTaskList({
+      tasks: [first, second],
+      mode: 'history',
+      selectionMode: true,
+      selectedIds: new Set(['history-1']),
+      onToggleGroupSelection,
+    });
+
+    expect(screen.getByText('1/2 selected')).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Select loaded tasks for Spring' }));
+    expect(onToggleGroupSelection).toHaveBeenCalledWith('session-a', ['history-2', 'history-1']);
   });
 
   it('renames sessions inline with enter', async () => {
@@ -404,8 +446,9 @@ describe('TaskList', () => {
       onRenameSession,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Rename session' }));
-    const input = screen.getByLabelText('Session display name');
+    await userEvent.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename session' }));
+    const input = await screen.findByLabelText('Session display name');
     await userEvent.clear(input);
     await userEvent.type(input, ' New Spring ');
     await userEvent.keyboard('{Enter}');
@@ -429,8 +472,9 @@ describe('TaskList', () => {
       onRenameSession,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Rename session' }));
-    const input = screen.getByLabelText('Session display name');
+    await userEvent.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename session' }));
+    const input = await screen.findByLabelText('Session display name');
     await userEvent.clear(input);
     await userEvent.type(input, 'New Spring');
     await userEvent.keyboard('{Enter}');
@@ -451,8 +495,9 @@ describe('TaskList', () => {
       onRenameSession,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Rename session' }));
-    const input = screen.getByLabelText('Session display name');
+    await userEvent.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename session' }));
+    const input = await screen.findByLabelText('Session display name');
     await userEvent.clear(input);
     await userEvent.type(input, 'Should not save');
     await userEvent.keyboard('{Escape}');
@@ -470,8 +515,9 @@ describe('TaskList', () => {
       onRenameSession,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Rename session' }));
-    const blankInput = screen.getByLabelText('Session display name');
+    await userEvent.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename session' }));
+    const blankInput = await screen.findByLabelText('Session display name');
     await userEvent.clear(blankInput);
     blankInput.blur();
     expect(onRenameSession).not.toHaveBeenCalled();
@@ -488,8 +534,9 @@ describe('TaskList', () => {
       onRenameSession,
     });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Rename session' }));
-    const input = screen.getByLabelText('Session display name');
+    await userEvent.click(screen.getByRole('button', { name: 'Open Spring group actions' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename session' }));
+    const input = await screen.findByLabelText('Session display name');
     await userEvent.clear(input);
     await userEvent.type(input, 'Retry Name');
     await userEvent.keyboard('{Enter}');
