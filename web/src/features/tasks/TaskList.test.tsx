@@ -56,10 +56,12 @@ describe('TaskList', () => {
     selectionMode?: boolean;
     submittingTaskId?: string;
     selectedIds?: Set<string>;
+    collapsedSessionIds?: Set<string>;
     onSelectTask?: (task: Task) => void;
     onQuickReply?: (task: Task, value: string) => Promise<void>;
     onToggleTaskSelection?: (taskId: string) => void;
     onToggleGroupSelection?: (sessionId: string, taskIds: string[]) => void;
+    onToggleGroupCollapsed?: (sessionId: string) => void;
     onRenameSession?: (sessionId: string, displayName: string) => Promise<void>;
     onExportGroup?: (tasks: Task[]) => Promise<void>;
     onArchiveGroup?: (tasks: Task[]) => Promise<void>;
@@ -273,6 +275,64 @@ describe('TaskList', () => {
     expect(screen.getByRole('heading', { name: /Spring · S-AAAAA · 2/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Spring · S-BBBBB · 1/ })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Rename session' })).toHaveLength(2);
+  });
+
+  it('hides task rows for collapsed history groups while keeping the group header visible', () => {
+    const first = task({
+      task_id: 'history-1',
+      session_id: 'session-a',
+      session_display_name: 'Spring',
+      session_auto_name: 'S-SPR1',
+      title: 'Spring history',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+    });
+    const second = task({
+      task_id: 'history-2',
+      session_id: 'session-b',
+      session_display_name: 'Summer',
+      session_auto_name: 'S-SUM1',
+      title: 'Summer history',
+      status: 'completed',
+      completed_at: '2026-06-05T03:00:00Z',
+    });
+
+    renderTaskList({
+      tasks: [first, second],
+      mode: 'history',
+      collapsedSessionIds: new Set(['session-a']),
+    });
+
+    expect(screen.getByRole('button', { name: /Expand Spring/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Open task Spring history/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Collapse Summer/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open task Summer history/ })).toBeInTheDocument();
+  });
+
+  it('calls the collapsed state callback when a group header toggle is clicked', async () => {
+    const user = userEvent.setup();
+    const onToggleGroupCollapsed = vi.fn();
+    const current = task({
+      task_id: 'history-1',
+      session_id: 'session-a',
+      session_display_name: 'Spring',
+      session_auto_name: 'S-SPR1',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+    });
+
+    renderTaskList({
+      tasks: [current],
+      mode: 'history',
+      collapsedSessionIds: new Set(),
+      onToggleGroupCollapsed,
+    });
+
+    await user.click(screen.getByRole('button', { name: /Collapse Spring/ }));
+
+    expect(onToggleGroupCollapsed).toHaveBeenCalledWith('session-a');
   });
 
   it('shows loaded group actions for main history groups', async () => {

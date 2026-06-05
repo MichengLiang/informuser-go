@@ -3,6 +3,8 @@ import {
   Archive,
   CheckCircle2,
   CheckSquare,
+  ChevronDown,
+  ChevronRight,
   ClipboardCopy,
   Clock3,
   Pencil,
@@ -21,7 +23,9 @@ type TaskGroup = {
   latestAt: string;
 };
 
-type TaskListItem = { type: 'group'; group: TaskGroup } | { type: 'task'; task: Task };
+type TaskListItem =
+  | { type: 'group'; group: TaskGroup; collapsed: boolean }
+  | { type: 'task'; task: Task };
 
 type TaskListProps = {
   tasks: Task[];
@@ -30,11 +34,13 @@ type TaskListProps = {
   selectionMode?: boolean;
   submittingTaskId?: string;
   selectedIds: Set<string>;
+  collapsedSessionIds?: Set<string>;
   onSelectTask: (task: Task) => void;
   onQuickReply: (task: Task, value: string) => Promise<void>;
   onRenameSession: (sessionId: string, displayName: string) => Promise<void>;
   onToggleTaskSelection: (taskId: string) => void;
   onToggleGroupSelection?: (sessionId: string, taskIds: string[]) => void;
+  onToggleGroupCollapsed?: (sessionId: string) => void;
   onExportGroup?: (tasks: Task[]) => Promise<void>;
   onArchiveGroup?: (tasks: Task[]) => Promise<void>;
   onUnarchiveGroup?: (tasks: Task[]) => Promise<void>;
@@ -78,11 +84,14 @@ function buildTaskGroups(tasks: Task[], mode: 'pending' | 'history' | 'archived'
     .sort((a, b) => b.latestAt.localeCompare(a.latestAt) || b.sessionId.localeCompare(a.sessionId));
 }
 
-function buildListItems(groups: TaskGroup[]): TaskListItem[] {
-  return groups.flatMap((group) => [
-    { type: 'group' as const, group },
-    ...group.tasks.map((task) => ({ type: 'task' as const, task })),
-  ]);
+function buildListItems(groups: TaskGroup[], collapsedSessionIds: Set<string>): TaskListItem[] {
+  return groups.flatMap((group) => {
+    const collapsed = collapsedSessionIds.has(group.sessionId);
+    return [
+      { type: 'group' as const, group, collapsed },
+      ...(collapsed ? [] : group.tasks.map((task) => ({ type: 'task' as const, task }))),
+    ];
+  });
 }
 
 export function TaskList({
@@ -92,18 +101,24 @@ export function TaskList({
   selectionMode = false,
   submittingTaskId,
   selectedIds,
+  collapsedSessionIds,
   onSelectTask,
   onQuickReply,
   onRenameSession,
   onToggleTaskSelection,
   onToggleGroupSelection,
+  onToggleGroupCollapsed,
   onExportGroup,
   onArchiveGroup,
   onUnarchiveGroup,
 }: TaskListProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const groups = useMemo(() => buildTaskGroups(tasks, mode), [tasks, mode]);
-  const items = useMemo(() => buildListItems(groups), [groups]);
+  const safeCollapsedSessionIds = collapsedSessionIds ?? new Set<string>();
+  const items = useMemo(
+    () => buildListItems(groups, safeCollapsedSessionIds),
+    [groups, safeCollapsedSessionIds],
+  );
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
@@ -149,9 +164,11 @@ export function TaskList({
               <SessionGroupHeader
                 key={`group-${item.group.sessionId}`}
                 group={item.group}
+                collapsed={item.collapsed}
                 mode={mode}
                 onRenameSession={onRenameSession}
                 onToggleGroupSelection={onToggleGroupSelection}
+                onToggleCollapsed={onToggleGroupCollapsed}
                 onExportGroup={onExportGroup}
                 onArchiveGroup={onArchiveGroup}
                 onUnarchiveGroup={onUnarchiveGroup}
@@ -214,9 +231,11 @@ export function TaskList({
 
 function SessionGroupHeader({
   group,
+  collapsed,
   mode,
   onRenameSession,
   onToggleGroupSelection,
+  onToggleCollapsed,
   onExportGroup,
   onArchiveGroup,
   onUnarchiveGroup,
@@ -225,9 +244,11 @@ function SessionGroupHeader({
   style,
 }: {
   group: TaskGroup;
+  collapsed: boolean;
   mode: 'pending' | 'history' | 'archived';
   onRenameSession: (sessionId: string, displayName: string) => Promise<void>;
   onToggleGroupSelection?: (sessionId: string, taskIds: string[]) => void;
+  onToggleCollapsed?: (sessionId: string) => void;
   onExportGroup?: (tasks: Task[]) => Promise<void>;
   onArchiveGroup?: (tasks: Task[]) => Promise<void>;
   onUnarchiveGroup?: (tasks: Task[]) => Promise<void>;
@@ -297,9 +318,20 @@ function SessionGroupHeader({
 
   const groupTaskIds = group.tasks.map((task) => task.task_id);
   const groupLabel = group.displayName;
+  const toggleLabel = `${collapsed ? 'Expand' : 'Collapse'} ${group.displayName}`;
 
   return (
     <div ref={measureElement} data-index={index} className="task-group-row" style={style}>
+      <button
+        type="button"
+        className="icon-button task-group-collapse-button"
+        onClick={() => onToggleCollapsed?.(group.sessionId)}
+        aria-expanded={!collapsed}
+        aria-label={toggleLabel}
+        title={toggleLabel}
+      >
+        {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+      </button>
       {editing ? (
         <input
           ref={inputRef}
