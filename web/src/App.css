@@ -198,10 +198,15 @@
 .export-toolbar,
 .export-toolbar-left,
 .export-toolbar-right {
-  display: inline-flex;
   align-items: center;
   min-width: 0;
   gap: 6px;
+}
+
+.history-heading-actions,
+.export-toolbar-left,
+.export-toolbar-right {
+  display: inline-flex;
 }
 
 .history-heading-actions,
@@ -234,10 +239,28 @@
 }
 
 .export-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
   justify-content: space-between;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+}
+
+.export-toolbar-left,
+.export-toolbar-right {
+  width: 100%;
+}
+
+.export-toolbar-left {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.export-toolbar-right {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
 }
 
 .tabs-list {
@@ -280,6 +303,11 @@
   background: var(--surface);
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.export-toolbar-right .tool-button {
+  width: 100%;
+  min-width: 0;
 }
 
 .tool-button:disabled,
