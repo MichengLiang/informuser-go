@@ -82,43 +82,35 @@ async function archiveE2ETasks(request: APIRequestContext, taskIds: string[]) {
 async function expectGroupHeaderContentDoesNotOverlapControls(row: Locator) {
   const result = await row.evaluate((element) => {
     const rowBox = element.getBoundingClientRect();
-    const title = element.querySelector('.task-group-title');
-    const displayName = title?.querySelector('span');
-    const autoName = title?.querySelector('small');
-    const buttons = Array.from(element.querySelectorAll('button'));
-    if (!title || !displayName || !autoName || buttons.length === 0) {
-      return { ok: false, reason: 'missing title, session labels, or buttons' };
+    const name = element.querySelector('.task-group-name');
+    const meta = element.querySelector('.task-group-meta');
+    const end = element.querySelector('.task-group-end');
+    if (!name || !meta || !end) {
+      return { ok: false, reason: 'missing session name, metadata, or end controls' };
     }
 
-    const titleBox = title.getBoundingClientRect();
-    const displayBox = displayName.getBoundingClientRect();
-    const autoBox = autoName.getBoundingClientRect();
-    const buttonBoxes = buttons.map((button) => button.getBoundingClientRect());
+    const nameBox = name.getBoundingClientRect();
+    const metaBox = meta.getBoundingClientRect();
+    const endBox = end.getBoundingClientRect();
     const epsilon = 1;
     const insideRow = (box: DOMRect) =>
       box.left + epsilon >= rowBox.left &&
       box.right <= rowBox.right + epsilon &&
       box.top + epsilon >= rowBox.top &&
       box.bottom <= rowBox.bottom + epsilon;
-    const labelsStayBeforeButtons = buttonBoxes.every(
-      (buttonBox) =>
-        displayBox.right <= buttonBox.left + epsilon && autoBox.right <= buttonBox.left + epsilon,
-    );
 
     return {
       ok:
-        insideRow(titleBox) &&
-        insideRow(displayBox) &&
-        insideRow(autoBox) &&
-        buttonBoxes.every(insideRow) &&
-        displayBox.bottom <= autoBox.top + epsilon &&
-        labelsStayBeforeButtons,
+        insideRow(nameBox) &&
+        insideRow(metaBox) &&
+        insideRow(endBox) &&
+        nameBox.right <= endBox.left + epsilon &&
+        metaBox.right <= endBox.left + epsilon,
       reason: JSON.stringify({
         row: rowBox.toJSON(),
-        title: titleBox.toJSON(),
-        displayName: displayBox.toJSON(),
-        autoName: autoBox.toJSON(),
-        buttons: buttonBoxes.map((box) => box.toJSON()),
+        name: nameBox.toJSON(),
+        meta: metaBox.toJSON(),
+        end: endBox.toJSON(),
       }),
     };
   });
@@ -228,7 +220,11 @@ test('groups sessions and runs archive workflow in the browser', async ({
     '# Archived winter',
   );
   await completeE2ETask(request, 'task-e2e-archived-winter', 'Winter archived reply');
-  await renameE2ESession(request, 'session-e2e-pending-long', longDisplayName);
+  const pendingSession = await renameE2ESession(
+    request,
+    'session-e2e-pending-long',
+    longDisplayName,
+  );
   const springSession = await renameE2ESession(request, 'session-e2e-history-spring', '春天');
   await renameE2ESession(request, 'session-e2e-history-duplicate', '春天');
   await renameE2ESession(request, 'session-e2e-archived-winter', '冬天归档');
@@ -246,7 +242,12 @@ test('groups sessions and runs archive workflow in the browser', async ({
   await expect(pendingGroup).toBeVisible();
   await expectGroupHeaderContentDoesNotOverlapControls(pendingGroup);
 
-  await pendingGroup.getByRole('button', { name: 'Rename session' }).click();
+  await pendingGroup
+    .getByRole('button', {
+      name: `Open ${longDisplayName} ${pendingSession.auto_name} group actions`,
+    })
+    .click();
+  await page.getByRole('menuitem', { name: 'Rename session' }).click();
   await page.getByLabel('Session display name').fill(renamedDisplayName);
   await page.keyboard.press('Enter');
   await expect(page.locator('.task-group-row').filter({ hasText: renamedDisplayName })).toBeVisible();
@@ -254,13 +255,32 @@ test('groups sessions and runs archive workflow in the browser', async ({
   await page.getByRole('tab', { name: 'History' }).click();
   const springGroups = page.locator('.task-group-row').filter({ hasText: '春天' });
   await expect(springGroups).toHaveCount(2);
+  await expect(page.getByRole('button', { name: /Collapse 春天/ }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: /History grouped spring/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /History duplicate display name/ })).toBeVisible();
   await expectGroupHeaderContentDoesNotOverlapControls(springGroups.first());
   await expectGroupHeaderContentDoesNotOverlapControls(springGroups.nth(1));
 
+  await page.getByRole('button', { name: 'Collapse all groups' }).click();
+  await expect(page.getByRole('button', { name: /History grouped spring/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /History duplicate display name/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Expand all groups' }).click();
+  await expect(page.getByRole('button', { name: /History grouped spring/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /History duplicate display name/ })).toBeVisible();
+
+  await springGroups
+    .filter({ hasText: springSession.auto_name })
+    .getByRole('button', { name: new RegExp(`Collapse 春天`) })
+    .click();
+  await expect(page.getByRole('button', { name: /History grouped spring/ })).toHaveCount(0);
+  await springGroups
+    .filter({ hasText: springSession.auto_name })
+    .getByRole('button', { name: new RegExp(`Expand 春天`) })
+    .click();
+  await expect(page.getByRole('button', { name: /History grouped spring/ })).toBeVisible();
+
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
   await page.getByLabel('Select history item').first().check();
   await expect(page.getByRole('button', { name: 'Copy (1)' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Archive (1)' })).toBeEnabled();
@@ -269,15 +289,22 @@ test('groups sessions and runs archive workflow in the browser', async ({
 
   await springGroups
     .filter({ hasText: springSession.auto_name })
-    .getByRole('button', { name: 'Archive group 春天' })
+    .getByRole('button', { name: `Open 春天 ${springSession.auto_name} group actions` })
     .click();
+  await page.getByRole('menuitem', { name: 'Archive loaded group' }).click();
   await expect(page.getByRole('button', { name: /History grouped spring/ })).toHaveCount(0);
 
   await page.getByTitle('Open archived history').click();
   await expect(page.getByText('Archived History')).toBeVisible();
   await expect(page.getByRole('button', { name: /Archived winter task/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /History grouped spring/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Restore', exact: true }).click();
+  await page.getByRole('button', { name: 'Collapse all groups' }).click();
+  await expect(page.getByRole('button', { name: /Archived winter task/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /History grouped spring/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Expand all groups' }).click();
+  await expect(page.getByRole('button', { name: /Archived winter task/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /History grouped spring/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
   await page
     .locator('.task-row')
     .filter({ has: page.getByRole('button', { name: /Archived winter task/ }) })
