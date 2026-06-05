@@ -54,7 +54,7 @@ react-markdown, remark-gfm, rehype-sanitize, lucide-react.
 
 ## Task 2: Go Module and Domain Model
 
-- [x] Initialize Go module `github.com/t103o/informuser-go`.
+- [x] Initialize Go module `github.com/MichengLiang/informuser-go`.
 - [x] Add domain tests for task statuses and result states.
 - [x] Verify the tests fail before implementation.
 - [x] Implement `internal/domain/task.go` and `event.go`.

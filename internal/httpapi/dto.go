@@ -3,8 +3,8 @@ package httpapi
 import (
 	"time"
 
-	"github.com/t103o/informuser-go/internal/app"
-	"github.com/t103o/informuser-go/internal/domain"
+	"github.com/MichengLiang/informuser-go/internal/app"
+	"github.com/MichengLiang/informuser-go/internal/domain"
 )
 
 type createTaskRequest struct {

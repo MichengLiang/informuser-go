@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/t103o/informuser-go/internal/domain"
+	"github.com/MichengLiang/informuser-go/internal/domain"
 )
 
 func TestEnsureSessionCreatesSessionAndPreservesRenamedDisplayName(t *testing.T) {

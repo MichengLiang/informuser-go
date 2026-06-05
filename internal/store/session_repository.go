@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/t103o/informuser-go/internal/domain"
+	"github.com/MichengLiang/informuser-go/internal/domain"
 )
 
 func (r *TaskRepository) EnsureSession(ctx context.Context, sessionID string, seenAt time.Time) (domain.Session, error) {

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/MichengLiang/informuser-go/internal/mcpbridge"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/t103o/informuser-go/internal/mcpbridge"
 )
 
 const defaultDaemonURL = "http://127.0.0.1:8765"

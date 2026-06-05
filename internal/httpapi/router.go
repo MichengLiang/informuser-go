@@ -3,8 +3,8 @@ package httpapi
 import (
 	"net/http"
 
+	"github.com/MichengLiang/informuser-go/internal/app"
 	"github.com/go-chi/chi/v5"
-	"github.com/t103o/informuser-go/internal/app"
 )
 
 type EventPublisher interface {

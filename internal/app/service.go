@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/t103o/informuser-go/internal/domain"
-	"github.com/t103o/informuser-go/internal/store"
+	"github.com/MichengLiang/informuser-go/internal/domain"
+	"github.com/MichengLiang/informuser-go/internal/store"
 )
 
 type Clock interface {

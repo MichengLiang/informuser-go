@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/t103o/informuser-go/internal/domain"
+	"github.com/MichengLiang/informuser-go/internal/domain"
 )
 
 var ErrTaskNotCompleted = errors.New("task is not completed")

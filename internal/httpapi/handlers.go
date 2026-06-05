@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/MichengLiang/informuser-go/internal/app"
+	"github.com/MichengLiang/informuser-go/internal/domain"
 	"github.com/go-chi/chi/v5"
-	"github.com/t103o/informuser-go/internal/app"
-	"github.com/t103o/informuser-go/internal/domain"
 )
 
 type Handlers struct {

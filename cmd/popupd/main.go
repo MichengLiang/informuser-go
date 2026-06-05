@@ -11,12 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/t103o/informuser-go/internal/app"
-	"github.com/t103o/informuser-go/internal/config"
-	"github.com/t103o/informuser-go/internal/httpapi"
-	"github.com/t103o/informuser-go/internal/realtime"
-	"github.com/t103o/informuser-go/internal/store"
-	"github.com/t103o/informuser-go/internal/webui"
+	"github.com/MichengLiang/informuser-go/internal/app"
+	"github.com/MichengLiang/informuser-go/internal/config"
+	"github.com/MichengLiang/informuser-go/internal/httpapi"
+	"github.com/MichengLiang/informuser-go/internal/realtime"
+	"github.com/MichengLiang/informuser-go/internal/store"
+	"github.com/MichengLiang/informuser-go/internal/webui"
 )
 
 func main() {

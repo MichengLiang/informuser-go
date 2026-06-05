@@ -1,17 +1,61 @@
 # AskUser Popup
 
+[![CI](https://github.com/MichengLiang/informuser-go/actions/workflows/ci.yml/badge.svg)](https://github.com/MichengLiang/informuser-go/actions/workflows/ci.yml)
+[![Release](https://github.com/MichengLiang/informuser-go/actions/workflows/release.yml/badge.svg)](https://github.com/MichengLiang/informuser-go/actions/workflows/release.yml)
+[![License](https://img.shields.io/github/license/MichengLiang/informuser-go)](LICENSE)
+[![Go Reference](https://pkg.go.dev/badge/github.com/MichengLiang/informuser-go.svg)](https://pkg.go.dev/github.com/MichengLiang/informuser-go)
+
 AskUser Popup is a local human-in-the-loop MCP tool. Code agents call the
 `AskUser` tool, the question appears in a browser workbench, and the tool call
 returns after the user replies.
 
-The approved rewrite design is in [docs/approved-design.md](docs/approved-design.md).
-The implementation plan is in [docs/implementation-plan.md](docs/implementation-plan.md).
+It is built for local agent workflows where a model occasionally needs a real
+human decision, approval, or pasted answer without leaving the terminal session
+blocked forever.
 
-## Run
+## Features
 
-Build the web UI into the embedded daemon assets and compile both Go binaries:
+- Stdio MCP server exposing one `AskUser` tool.
+- Local Go daemon with SQLite persistence.
+- Browser workbench served by the daemon.
+- Pending, history, and archived task views grouped by client/session.
+- Markdown reader with rendered/raw modes.
+- Quick paste replies and a full reply drafting panel.
+- Optional browser notifications and sound cue.
+- LAN-ready startup URLs printed by the daemon.
+- Embedded web assets, so release binaries do not need a separate web server.
+
+## Architecture
+
+AskUser Popup has two binaries:
+
+- `popupd`: HTTP daemon that stores tasks, serves the web UI, and accepts replies.
+- `popup-mcp`: stdio MCP server that registers questions with `popupd` and polls until the user replies.
+
+The browser UI is a React/Vite app embedded into the Go daemon under
+`internal/webui/dist`.
+
+## Install From Source
+
+Requirements:
+
+- Go 1.26.3 or newer compatible toolchain.
+- Node.js 24 LTS.
+- pnpm 10.
+
+Install the binaries with Go:
 
 ```bash
+go install github.com/MichengLiang/informuser-go/cmd/popupd@latest
+go install github.com/MichengLiang/informuser-go/cmd/popup-mcp@latest
+```
+
+Release archives are also attached to tagged GitHub Releases.
+
+Build the embedded web UI and both Go binaries:
+
+```bash
+pnpm --dir web install
 ./scripts/build_all.py
 ```
 
@@ -22,15 +66,7 @@ bin/popupd
 bin/popup-mcp
 ```
 
-Manual build steps:
-
-```bash
-pnpm --dir web install
-pnpm --dir web build
-pnpm --dir web sync:embed
-go build -o bin/popupd ./cmd/popupd
-go build -o bin/popup-mcp ./cmd/popup-mcp
-```
+## Run The Daemon
 
 Start the local daemon:
 
@@ -38,28 +74,26 @@ Start the local daemon:
 go run ./cmd/popupd
 ```
 
-The startup log prints clickable browser URLs. Open the local URL on this machine,
-or a LAN URL from another device on the same network:
+The startup log prints clickable browser URLs:
 
 ```text
-http://127.0.0.1:8765
-http://<your-lan-ip>:8765
+local_url=http://127.0.0.1:8765/
+lan_urls="[http://<your-lan-ip>:8765/]"
 ```
 
-The daemon can be configured with:
+Open the local URL on the same machine, or a LAN URL from another device on the
+same network.
+
+Configuration:
 
 ```bash
 ASKUSER_ADDR=0.0.0.0:8765
 ASKUSER_DB=askuser-popup.db
 ```
 
-## MCP Server
+Set `ASKUSER_ADDR=127.0.0.1:8765` if you want loopback-only access.
 
-Build or run the stdio MCP server:
-
-```bash
-go run ./cmd/popup-mcp
-```
+## Configure MCP
 
 Build a binary for MCP client configuration:
 
@@ -73,7 +107,7 @@ Example MCP configuration:
 {
   "servers": {
     "popup": {
-      "command": "/home/t103o/workbench/projects/informuser-go/popup-mcp"
+      "command": "/absolute/path/to/popup-mcp"
     }
   }
 }
@@ -85,7 +119,19 @@ The MCP server connects to `http://127.0.0.1:8765` by default. Override it with:
 ASKUSER_DAEMON_URL=http://127.0.0.1:8765
 ```
 
-## Verify
+## Development
+
+Manual build steps:
+
+```bash
+pnpm --dir web install
+pnpm --dir web build
+pnpm --dir web sync:embed
+go build -o bin/popupd ./cmd/popupd
+go build -o bin/popup-mcp ./cmd/popup-mcp
+```
+
+Run the verification suite:
 
 ```bash
 go test ./...
@@ -97,3 +143,20 @@ pnpm --dir web build
 pnpm --dir web sync:embed
 pnpm --dir web test:e2e
 ```
+
+## Release
+
+Pushing a semantic version tag such as `v0.1.0` runs the release workflow. The
+workflow builds release archives for Linux, macOS, and Windows and attaches them
+to a GitHub Release.
+
+## Documentation
+
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [Design notes](docs/approved-design.md)
+
+## License
+
+AskUser Popup is licensed under the [Apache License 2.0](LICENSE).

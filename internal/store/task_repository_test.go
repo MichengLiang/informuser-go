@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/t103o/informuser-go/internal/domain"
+	"github.com/MichengLiang/informuser-go/internal/domain"
 )
 
 func newTestRepository(t *testing.T) *TaskRepository {
