@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext, test } from '@playwright/test';
+import type { Locator } from '@playwright/test';
 
 const longToken =
   'https://example.local/' +
@@ -76,6 +77,52 @@ async function archiveE2ETasks(request: APIRequestContext, taskIds: string[]) {
     data: { task_ids: taskIds },
   });
   expect(response.ok()).toBeTruthy();
+}
+
+async function expectGroupHeaderContentDoesNotOverlapControls(row: Locator) {
+  const result = await row.evaluate((element) => {
+    const rowBox = element.getBoundingClientRect();
+    const title = element.querySelector('.task-group-title');
+    const displayName = title?.querySelector('span');
+    const autoName = title?.querySelector('small');
+    const buttons = Array.from(element.querySelectorAll('button'));
+    if (!title || !displayName || !autoName || buttons.length === 0) {
+      return { ok: false, reason: 'missing title, session labels, or buttons' };
+    }
+
+    const titleBox = title.getBoundingClientRect();
+    const displayBox = displayName.getBoundingClientRect();
+    const autoBox = autoName.getBoundingClientRect();
+    const buttonBoxes = buttons.map((button) => button.getBoundingClientRect());
+    const epsilon = 1;
+    const insideRow = (box: DOMRect) =>
+      box.left + epsilon >= rowBox.left &&
+      box.right <= rowBox.right + epsilon &&
+      box.top + epsilon >= rowBox.top &&
+      box.bottom <= rowBox.bottom + epsilon;
+    const labelsStayBeforeButtons = buttonBoxes.every(
+      (buttonBox) =>
+        displayBox.right <= buttonBox.left + epsilon && autoBox.right <= buttonBox.left + epsilon,
+    );
+
+    return {
+      ok:
+        insideRow(titleBox) &&
+        insideRow(displayBox) &&
+        insideRow(autoBox) &&
+        buttonBoxes.every(insideRow) &&
+        displayBox.bottom <= autoBox.top + epsilon &&
+        labelsStayBeforeButtons,
+      reason: JSON.stringify({
+        row: rowBox.toJSON(),
+        title: titleBox.toJSON(),
+        displayName: displayBox.toJSON(),
+        autoName: autoBox.toJSON(),
+        buttons: buttonBoxes.map((box) => box.toJSON()),
+      }),
+    };
+  });
+  expect(result, result.reason).toMatchObject({ ok: true });
 }
 
 test('renders wide Markdown, opens reply mode, and shows completed user reply history', async ({
@@ -195,43 +242,22 @@ test('groups sessions and runs archive workflow in the browser', async ({
   await expect(pendingGroup).toContainText(/S-[A-Z2-7]{5}/);
   await expect(page.getByRole('button', { name: /Pending from long session/ })).toBeVisible();
 
+  await page.setViewportSize({ width: 640, height: 760 });
+  await expect(pendingGroup).toBeVisible();
+  await expectGroupHeaderContentDoesNotOverlapControls(pendingGroup);
+
   await pendingGroup.getByRole('button', { name: 'Rename session' }).click();
   await page.getByLabel('Session display name').fill(renamedDisplayName);
   await page.keyboard.press('Enter');
   await expect(page.locator('.task-group-row').filter({ hasText: renamedDisplayName })).toBeVisible();
-
-  await page.setViewportSize({ width: 640, height: 760 });
-  const headerBoxes = await page.locator('.task-group-row').evaluateAll((rows) =>
-    rows.map((row) => {
-      const rowBox = row.getBoundingClientRect();
-      return Array.from(row.querySelectorAll('button')).every((button) => {
-        const box = button.getBoundingClientRect();
-        return box.left >= rowBox.left && box.right <= rowBox.right && box.top >= rowBox.top;
-      });
-    }),
-  );
-  expect(headerBoxes.every(Boolean)).toBeTruthy();
 
   await page.getByRole('tab', { name: 'History' }).click();
   const springGroups = page.locator('.task-group-row').filter({ hasText: '春天' });
   await expect(springGroups).toHaveCount(2);
   await expect(page.getByRole('button', { name: /History grouped spring/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /History duplicate display name/ })).toBeVisible();
-  const historyHeaderBoxes = await springGroups.evaluateAll((rows) =>
-    rows.map((row) => {
-      const rowBox = row.getBoundingClientRect();
-      return Array.from(row.querySelectorAll('button')).every((button) => {
-        const box = button.getBoundingClientRect();
-        return (
-          box.left >= rowBox.left &&
-          box.right <= rowBox.right &&
-          box.top >= rowBox.top &&
-          box.bottom <= rowBox.bottom
-        );
-      });
-    }),
-  );
-  expect(historyHeaderBoxes.every(Boolean)).toBeTruthy();
+  await expectGroupHeaderContentDoesNotOverlapControls(springGroups.first());
+  await expectGroupHeaderContentDoesNotOverlapControls(springGroups.nth(1));
 
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.getByRole('button', { name: 'Export', exact: true }).click();
