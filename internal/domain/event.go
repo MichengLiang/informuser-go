@@ -19,6 +19,7 @@ type TaskEvent struct {
 	TaskID            string    `json:"task_id,omitempty"`
 	SessionID         string    `json:"session_id,omitempty"`
 	CompletedAt       time.Time `json:"completed_at,omitempty"`
+	ReplySource       string    `json:"reply_source,omitempty"`
 	CancelReason      string    `json:"cancel_reason,omitempty"`
 	ReplacementTaskID string    `json:"replacement_task_id,omitempty"`
 }
@@ -30,6 +31,7 @@ func (e TaskEvent) MarshalJSON() ([]byte, error) {
 		TaskID            string     `json:"task_id,omitempty"`
 		SessionID         string     `json:"session_id,omitempty"`
 		CompletedAt       *time.Time `json:"completed_at,omitempty"`
+		ReplySource       string     `json:"reply_source,omitempty"`
 		CancelReason      string     `json:"cancel_reason,omitempty"`
 		ReplacementTaskID string     `json:"replacement_task_id,omitempty"`
 	}
@@ -37,6 +39,7 @@ func (e TaskEvent) MarshalJSON() ([]byte, error) {
 		Type:              e.Type,
 		TaskID:            e.TaskID,
 		SessionID:         e.SessionID,
+		ReplySource:       e.ReplySource,
 		CancelReason:      e.CancelReason,
 		ReplacementTaskID: e.ReplacementTaskID,
 	}
@@ -56,12 +59,13 @@ func NewTaskCreatedEvent(task Task) TaskEvent {
 	}
 }
 
-func NewTaskCompletedEvent(taskID string, sessionID string, completedAt time.Time) TaskEvent {
+func NewTaskCompletedEvent(taskID string, sessionID string, completedAt time.Time, replySource string) TaskEvent {
 	return TaskEvent{
 		Type:        EventTypeTaskCompleted,
 		TaskID:      taskID,
 		SessionID:   sessionID,
 		CompletedAt: completedAt,
+		ReplySource: replySource,
 	}
 }
 

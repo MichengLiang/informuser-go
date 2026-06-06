@@ -23,6 +23,7 @@ import {
   applyRestoreResult,
   applyTaskCancelled,
   applyTaskCompleted,
+  applyTaskCompletedLocally,
   applyTaskCreated,
   changeSurface,
   deriveFocusedTask,
@@ -73,6 +74,10 @@ function currentSurface(
   historyView: 'main' | 'archived',
 ): FocusSurface {
   return tab === 'pending' ? 'pending' : historyView === 'archived' ? 'archived' : 'history';
+}
+
+function isBrowserReplySource(replySource?: string) {
+  return replySource === 'quick_paste' || replySource === 'reply_panel';
 }
 
 function statusMessage(
@@ -142,6 +147,9 @@ function App() {
   const historyTasksRef = useRef<Task[]>([]);
   const archivedTasksRef = useRef<Task[]>([]);
   const historyViewRef = useRef<'main' | 'archived'>('main');
+  // The server publishes task_completed before the reply POST returns, so the
+  // browser has to recognize its own in-flight replies when the event races in.
+  const browserSubmittedTaskIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     pendingTasksRef.current = pendingTasks;
@@ -232,11 +240,25 @@ function App() {
       if (event.type === 'task_completed' || event.type === 'task_cancelled') {
         const taskId = event.task_id;
         const lastKnownTask = pendingTasksRef.current.find((task) => task.task_id === taskId);
-        setFocusState((current) =>
-          event.type === 'task_completed'
-            ? applyTaskCompleted(current, taskId, lastKnownTask)
-            : applyTaskCancelled(current, event, lastKnownTask),
+        const remainingPendingTasks = pendingTasksRef.current.filter(
+          (task) => task.task_id !== taskId,
         );
+        if (
+          event.type === 'task_completed' &&
+          (browserSubmittedTaskIdsRef.current.has(taskId) ||
+            isBrowserReplySource(event.reply_source))
+        ) {
+          browserSubmittedTaskIdsRef.current.delete(taskId);
+          setFocusState((current) =>
+            applyTaskCompletedLocally(current, taskId, remainingPendingTasks),
+          );
+        } else {
+          setFocusState((current) =>
+            event.type === 'task_completed'
+              ? applyTaskCompleted(current, taskId, lastKnownTask)
+              : applyTaskCancelled(current, event, lastKnownTask),
+          );
+        }
         setPendingTasks((tasks) => tasks.filter((task) => task.task_id !== taskId));
         localStorage.removeItem(`askuser.drafts.${taskId}`);
         setReplyMode(false);
@@ -297,14 +319,23 @@ function App() {
 
   const handleSubmit = async (task: Task, value: string, source: string) => {
     setSubmittingTaskId(task.task_id);
+    browserSubmittedTaskIdsRef.current.add(task.task_id);
     setError(undefined);
     try {
       await submitReply(task.task_id, combinedReply(value), source);
-      setPendingTasks((tasks) => tasks.filter((item) => item.task_id !== task.task_id));
+      browserSubmittedTaskIdsRef.current.delete(task.task_id);
+      const remainingPendingTasks = pendingTasksRef.current.filter(
+        (item) => item.task_id !== task.task_id,
+      );
+      setFocusState((current) =>
+        applyTaskCompletedLocally(current, task.task_id, remainingPendingTasks),
+      );
+      setPendingTasks(remainingPendingTasks);
       localStorage.removeItem(`askuser.drafts.${task.task_id}`);
       setReplyMode(false);
       setHistoryTasks(await fetchHistory(historyPageSize));
     } catch (err) {
+      browserSubmittedTaskIdsRef.current.delete(task.task_id);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmittingTaskId(undefined);

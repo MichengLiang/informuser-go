@@ -64,7 +64,7 @@ func TestTaskCreatedEventJSONOmitsZeroArchivedAt(t *testing.T) {
 func TestTaskCompletedEvent(t *testing.T) {
 	completedAt := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
 
-	event := NewTaskCompletedEvent("task-1", "session-1", completedAt)
+	event := NewTaskCompletedEvent("task-1", "session-1", completedAt, "quick_paste")
 
 	if event.Type != EventTypeTaskCompleted {
 		t.Fatalf("event type = %q, want %q", event.Type, EventTypeTaskCompleted)
@@ -77,6 +77,9 @@ func TestTaskCompletedEvent(t *testing.T) {
 	}
 	if !event.CompletedAt.Equal(completedAt) {
 		t.Fatalf("completed_at = %s, want %s", event.CompletedAt, completedAt)
+	}
+	if event.ReplySource != "quick_paste" {
+		t.Fatalf("reply_source = %q, want quick_paste", event.ReplySource)
 	}
 }
 

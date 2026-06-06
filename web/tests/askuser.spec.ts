@@ -231,6 +231,7 @@ test('renders wide Markdown, opens reply mode, and shows completed user reply hi
   await page.getByRole('button', { name: /Submit reply/i }).click();
 
   await expect(page.getByRole('button', { name: /Wide Markdown review/ })).toHaveCount(0);
+  await expect(page.getByText('This request was completed outside this browser.')).toHaveCount(0);
   const result = await request.get('/api/tasks/task-playwright-1/result');
   await expect(result).toBeOK();
   await expect(await result.json()).toMatchObject({

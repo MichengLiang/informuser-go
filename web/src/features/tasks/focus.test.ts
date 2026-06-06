@@ -6,6 +6,7 @@ import {
   applyRestoreResult,
   applyTaskCancelled,
   applyTaskCompleted,
+  applyTaskCompletedLocally,
   applyTaskCreated,
   changeSurface,
   deriveFocusedTask,
@@ -91,6 +92,34 @@ describe('task focus state', () => {
       surface: 'pending',
       task: active,
       reason: 'completed_elsewhere',
+    });
+  });
+
+  it('moves local completion focus to the next pending task instead of marking stale', () => {
+    const active = task({ task_id: 'pending-active', markdown: 'active markdown' });
+    const nextPending = task({ task_id: 'pending-next', markdown: 'next markdown' });
+    const focus = initializeFocus([active, nextPending], []);
+
+    const next = applyTaskCompletedLocally(focus, 'pending-active', [nextPending]);
+
+    expect(
+      deriveFocusedTask(next, { pending: [nextPending], history: [], archived: [] }),
+    ).toMatchObject({
+      kind: 'task',
+      surface: 'pending',
+      task: nextPending,
+    });
+  });
+
+  it('clears pending focus after local completion when no pending task remains', () => {
+    const active = task({ task_id: 'pending-active', markdown: 'active markdown' });
+    const focus = initializeFocus([active], []);
+
+    const next = applyTaskCompletedLocally(focus, 'pending-active', []);
+
+    expect(deriveFocusedTask(next, { pending: [], history: [], archived: [] })).toMatchObject({
+      kind: 'empty',
+      surface: 'pending',
     });
   });
 

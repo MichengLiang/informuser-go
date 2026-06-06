@@ -480,6 +480,16 @@ func TestCreateAndReplyPublishEvents(t *testing.T) {
 	if created.Task.SessionDisplayName == "" || created.Task.SessionAutoName == "" {
 		t.Fatalf("created task event session fields should be populated: %#v", created.Task)
 	}
+	completed, ok := publisher.events[1].(domain.TaskEvent)
+	if !ok {
+		t.Fatalf("second event = %#v, want domain.TaskEvent", publisher.events[1])
+	}
+	if completed.Type != domain.EventTypeTaskCompleted {
+		t.Fatalf("second event type = %q, want task_completed", completed.Type)
+	}
+	if completed.ReplySource != "quick_paste" {
+		t.Fatalf("completed reply_source = %q, want quick_paste", completed.ReplySource)
+	}
 }
 
 func TestCreateTaskSupersedePublishesCancellationReasonAndReplacement(t *testing.T) {

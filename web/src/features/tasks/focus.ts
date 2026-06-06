@@ -164,6 +164,23 @@ export function applyTaskCompleted(
   );
 }
 
+export function applyTaskCompletedLocally(
+  state: FocusState,
+  taskId: string,
+  remainingPending: Task[],
+): FocusState {
+  const pendingFocus = state.bySurface.pending;
+  if (pendingFocus.kind !== 'task' || pendingFocus.taskId !== taskId) {
+    return state;
+  }
+  const nextPending = remainingPending.find((task) => task.task_id !== taskId);
+  return withSurfaceFocus(
+    state,
+    'pending',
+    nextPending ? focusTask('pending', nextPending.task_id, 'post_completion') : none('pending'),
+  );
+}
+
 export function applyTaskCancelled(
   state: FocusState,
   event: Extract<TaskEvent, { type: 'task_cancelled' }>,

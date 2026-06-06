@@ -300,8 +300,141 @@ describe('App', () => {
       task_id: 'task-2',
       session_id: 'session-1',
       completed_at: 'now',
+      reply_source: 'reply_panel',
     });
     await waitFor(() => expect(apiMocks.fetchHistory).toHaveBeenCalledTimes(3));
+  });
+
+  it('does not mark a browser-submitted reply as completed elsewhere when its event arrives', async () => {
+    const pending = task({
+      task_id: 'task-browser-reply',
+      title: 'Browser reply',
+      markdown: 'browser markdown',
+    });
+    const history = task({
+      task_id: 'task-browser-reply',
+      title: 'Browser reply',
+      markdown: 'browser markdown',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      user_input: 'quick reply',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([pending]);
+    apiMocks.fetchHistory.mockResolvedValueOnce([]).mockResolvedValue([history]);
+    let resolveReply!: () => void;
+    apiMocks.submitReply.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReply = resolve;
+          eventHandler?.({
+            type: 'task_completed',
+            task_id: 'task-browser-reply',
+            session_id: 'session-1',
+            completed_at: '2026-06-05T02:00:00Z',
+            reply_source: 'quick_paste',
+          });
+        }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('browser markdown')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Quick reply task-browser-reply' }));
+    resolveReply();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Browser reply/ })).not.toBeInTheDocument(),
+    );
+
+    await waitFor(() => expect(apiMocks.fetchHistory).toHaveBeenCalledTimes(3));
+    expect(
+      screen.queryByText('This request was completed outside this browser.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not mark a browser-submitted reply as external when its event follows the reply response', async () => {
+    const pending = task({
+      task_id: 'task-delayed-event',
+      title: 'Delayed event reply',
+      markdown: 'delayed event markdown',
+    });
+    const history = task({
+      task_id: 'task-delayed-event',
+      title: 'Delayed event reply',
+      markdown: 'delayed event markdown',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      user_input: 'quick reply',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([pending]);
+    apiMocks.fetchHistory
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(async () => {
+        eventHandler?.({
+          type: 'task_completed',
+          task_id: 'task-delayed-event',
+          session_id: 'session-1',
+          completed_at: '2026-06-05T02:00:00Z',
+          reply_source: 'quick_paste',
+        });
+        return [history];
+      })
+      .mockResolvedValue([history]);
+    apiMocks.submitReply.mockResolvedValue(undefined);
+
+    render(<App />);
+
+    expect(await screen.findByText('delayed event markdown')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Quick reply task-delayed-event' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Delayed event reply/ })).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(apiMocks.fetchHistory).toHaveBeenCalledTimes(3));
+    expect(
+      screen.queryByText('This request was completed outside this browser.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('treats browser reply-source completion events as local even without an in-flight submit', async () => {
+    const pending = task({
+      task_id: 'task-browser-source',
+      title: 'Browser source event',
+      markdown: 'browser source markdown',
+    });
+    const history = task({
+      task_id: 'task-browser-source',
+      title: 'Browser source event',
+      markdown: 'browser source markdown',
+      status: 'completed',
+      completed_at: '2026-06-05T02:00:00Z',
+      user_input: 'reply from another tab',
+      reply_source: 'reply_panel',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([pending]);
+    apiMocks.fetchHistory.mockResolvedValueOnce([]).mockResolvedValue([history]);
+
+    render(<App />);
+
+    expect(await screen.findByText('browser source markdown')).toBeInTheDocument();
+
+    eventHandler?.({
+      type: 'task_completed',
+      task_id: 'task-browser-source',
+      session_id: 'session-1',
+      completed_at: '2026-06-05T02:00:00Z',
+      reply_source: 'reply_panel',
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: /Browser source event/ }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText('This request was completed outside this browser.'),
+    ).not.toBeInTheDocument();
   });
 
   it('keeps the current pending reader when a different-session task is created', async () => {

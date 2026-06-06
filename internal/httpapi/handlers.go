@@ -133,7 +133,12 @@ func (h *Handlers) submitReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.publisher != nil && result.Found {
-		h.publisher.Publish(domain.NewTaskCompletedEvent(taskID, task.SessionID, result.CompletedAt))
+		h.publisher.Publish(domain.NewTaskCompletedEvent(
+			taskID,
+			task.SessionID,
+			result.CompletedAt,
+			request.ReplySource,
+		))
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
