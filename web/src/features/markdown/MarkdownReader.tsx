@@ -1,5 +1,12 @@
 import * as Popover from '@radix-ui/react-popover';
-import { Check, ClipboardCopy, Eye, MessageSquareReply, SlidersHorizontal } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  ClipboardCopy,
+  Eye,
+  MessageSquareReply,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
@@ -16,9 +23,11 @@ type MarkdownReaderProps = {
   markdown: string;
   userInput?: string;
   canReply?: boolean;
+  statusMessage?: string;
   settings: MarkdownSettings;
   onSettingsChange: (settings: MarkdownSettings) => void;
   onOpenReply?: () => void;
+  onOpenReplacement?: () => void;
   onCopyMarkdown?: (markdown: string) => Promise<void>;
 };
 
@@ -32,9 +41,11 @@ export function MarkdownReader({
   markdown,
   userInput,
   canReply = false,
+  statusMessage,
   settings,
   onSettingsChange,
   onOpenReply,
+  onOpenReplacement,
   onCopyMarkdown,
 }: MarkdownReaderProps) {
   const [copied, setCopied] = useState(false);
@@ -147,6 +158,17 @@ export function MarkdownReader({
       </div>
 
       <div className={`reader-scroll reader-width-${settings.contentWidth}`}>
+        {statusMessage ? (
+          <div className="reader-status-banner">
+            <span>{statusMessage}</span>
+            {onOpenReplacement ? (
+              <button type="button" className="tool-button" onClick={onOpenReplacement}>
+                <ArrowRight size={16} />
+                Open replacement
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {settings.raw ? (
           <pre className="raw-markdown" style={style}>
             {markdown}

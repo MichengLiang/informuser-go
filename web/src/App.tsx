@@ -18,6 +18,19 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownReader, type MarkdownSettings } from './features/markdown/MarkdownReader';
 import { ReplyPanel } from './features/reply/ReplyPanel';
+import {
+  applyArchiveResult,
+  applyRestoreResult,
+  applyTaskCancelled,
+  applyTaskCompleted,
+  applyTaskCreated,
+  changeSurface,
+  deriveFocusedTask,
+  type FocusState,
+  type FocusSurface,
+  initializeFocus,
+  selectTask as selectTaskFocus,
+} from './features/tasks/focus';
 import { TaskList } from './features/tasks/TaskList';
 import {
   archiveHistoryTasks,
@@ -47,6 +60,38 @@ function loadedSessionIds(tasks: Task[]) {
   return Array.from(new Set(tasks.map((task) => task.session_id)));
 }
 
+function emptyFocusState(): FocusState {
+  return initializeFocus([], []);
+}
+
+function taskMap(tasks: Task[]) {
+  return new Map(tasks.map((task) => [task.task_id, task]));
+}
+
+function currentSurface(
+  tab: 'pending' | 'history',
+  historyView: 'main' | 'archived',
+): FocusSurface {
+  return tab === 'pending' ? 'pending' : historyView === 'archived' ? 'archived' : 'history';
+}
+
+function statusMessage(
+  reason: 'completed_elsewhere' | 'cancelled' | 'superseded' | 'archived' | 'unarchived',
+) {
+  switch (reason) {
+    case 'completed_elsewhere':
+      return 'This request was completed outside this browser.';
+    case 'cancelled':
+      return 'This request was cancelled.';
+    case 'superseded':
+      return 'This request was replaced by a newer request from the same session.';
+    case 'archived':
+      return 'This history item was archived.';
+    case 'unarchived':
+      return 'This archived item was restored to history.';
+  }
+}
+
 function loadJSON<T>(key: string, fallback: T): T {
   const value = localStorage.getItem(key);
   if (!value) {
@@ -63,7 +108,7 @@ function App() {
   const [pendingTasks, setPendingTasks] = useState<Task[]>([]);
   const [historyTasks, setHistoryTasks] = useState<Task[]>([]);
   const [archivedTasks, setArchivedTasks] = useState<Task[]>([]);
-  const [activeTaskId, setActiveTaskId] = useState<string | undefined>();
+  const [focusState, setFocusState] = useState<FocusState>(emptyFocusState);
   const [tab, setTab] = useState<'pending' | 'history'>('pending');
   const [historyView, setHistoryView] = useState<'main' | 'archived'>('main');
   const [connectionStatus, setConnectionStatus] = useState('connecting');
@@ -143,7 +188,7 @@ function App() {
         ]);
         setPendingTasks(pending);
         setHistoryTasks(history);
-        setActiveTaskId(pending[0]?.task_id ?? history[0]?.task_id);
+        setFocusState(initializeFocus(pending, history));
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -181,11 +226,17 @@ function App() {
           event.task,
           ...tasks.filter((task) => task.task_id !== event.task.task_id),
         ]);
-        setActiveTaskId((current) => current ?? event.task.task_id);
+        setFocusState((current) => applyTaskCreated(current, event.task));
         alertNewTask(event.task);
       }
       if (event.type === 'task_completed' || event.type === 'task_cancelled') {
         const taskId = event.task_id;
+        const lastKnownTask = pendingTasksRef.current.find((task) => task.task_id === taskId);
+        setFocusState((current) =>
+          event.type === 'task_completed'
+            ? applyTaskCompleted(current, taskId, lastKnownTask)
+            : applyTaskCancelled(current, event, lastKnownTask),
+        );
         setPendingTasks((tasks) => tasks.filter((task) => task.task_id !== taskId));
         localStorage.removeItem(`askuser.drafts.${taskId}`);
         setReplyMode(false);
@@ -198,11 +249,41 @@ function App() {
     }, setConnectionStatus);
   }, [notificationsEnabled, soundEnabled]);
 
-  const activeTask = useMemo(() => {
-    const source =
-      tab === 'pending' ? pendingTasks : historyView === 'archived' ? archivedTasks : historyTasks;
-    return source.find((task) => task.task_id === activeTaskId) ?? source[0];
-  }, [activeTaskId, archivedTasks, historyTasks, historyView, pendingTasks, tab]);
+  const focusedTaskView = useMemo(
+    () =>
+      deriveFocusedTask(focusState, {
+        pending: pendingTasks,
+        history: historyTasks,
+        archived: archivedTasks,
+      }),
+    [archivedTasks, focusState, historyTasks, pendingTasks],
+  );
+  const activeTask = focusedTaskView.kind === 'task' ? focusedTaskView.task : undefined;
+  const readerTask =
+    focusedTaskView.kind === 'task' || focusedTaskView.kind === 'stale'
+      ? focusedTaskView.task
+      : undefined;
+  const activeTaskIdForSurface =
+    focusedTaskView.kind === 'task' ? focusedTaskView.task.task_id : undefined;
+  const readerStatusMessage =
+    focusedTaskView.kind === 'stale' ? statusMessage(focusedTaskView.reason) : undefined;
+  const replacementTask =
+    focusedTaskView.kind === 'stale' ? focusedTaskView.replacementTask : undefined;
+  const openReplacement = replacementTask
+    ? () => {
+        setFocusState((current) =>
+          selectTaskFocus(current, 'pending', replacementTask.task_id, 'user'),
+        );
+        setTab('pending');
+        setHistoryView('main');
+        setReplyMode(false);
+      }
+    : undefined;
+  const readerMarkdown =
+    readerTask?.markdown ??
+    (focusedTaskView.kind === 'empty'
+      ? focusedTaskView.message
+      : 'Select a task to read its Markdown content.');
   const emptySelection = useMemo(() => new Set<string>(), []);
 
   const combinedReply = (value: string) => {
@@ -296,11 +377,7 @@ function App() {
       archivedTasksRef.current = [];
       setSelectedHistoryIds(new Set());
       setHistorySelectionMode(false);
-      setActiveTaskId((current) =>
-        current && removedIds.has(current)
-          ? (nextHistoryTasks[0]?.task_id ?? pendingTasksRef.current[0]?.task_id)
-          : current,
-      );
+      setFocusState((current) => applyArchiveResult(current, taskIds, taskMap(tasks)));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -319,11 +396,7 @@ function App() {
       archivedTasksRef.current = nextArchivedTasks;
       setSelectedArchivedIds(new Set());
       setHistorySelectionMode(false);
-      setActiveTaskId((current) =>
-        current && removedIds.has(current)
-          ? (nextArchivedTasks[0]?.task_id ?? pendingTasksRef.current[0]?.task_id)
-          : current,
-      );
+      setFocusState((current) => applyRestoreResult(current, taskIds, taskMap(tasks)));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       return;
@@ -333,11 +406,6 @@ function App() {
       const refreshedHistory = await fetchHistory(historyPageSize);
       setHistoryTasks(refreshedHistory);
       historyTasksRef.current = refreshedHistory;
-      setActiveTaskId((current) =>
-        historyViewRef.current !== 'archived' && current && removedIds.has(current)
-          ? (refreshedHistory[0]?.task_id ?? pendingTasksRef.current[0]?.task_id)
-          : current,
-      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -419,6 +487,7 @@ function App() {
     setSelectedHistoryIds(new Set());
     setSelectedArchivedIds(new Set());
     setHistoryView('archived');
+    setFocusState((current) => changeSurface(current, 'archived'));
     if (archivedLoaded) {
       return;
     }
@@ -426,7 +495,6 @@ function App() {
       const archived = await fetchArchivedHistory(historyPageSize);
       setArchivedTasks(archived);
       setArchivedLoaded(true);
-      setActiveTaskId((current) => current ?? archived[0]?.task_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -436,7 +504,7 @@ function App() {
     setHistoryView('main');
     setHistorySelectionMode(false);
     setSelectedArchivedIds(new Set());
-    setActiveTaskId((current) => current ?? historyTasks[0]?.task_id);
+    setFocusState((current) => changeSurface(current, 'history'));
   };
 
   const loadMoreHistory = async () => {
@@ -481,10 +549,13 @@ function App() {
     setHistoryView('main');
     setSelectedHistoryIds(new Set());
     setSelectedArchivedIds(new Set());
+    setFocusState((current) => changeSurface(current, value === 'pending' ? 'pending' : 'history'));
   };
 
   const selectTask = (task: Task) => {
-    setActiveTaskId(task.task_id);
+    setFocusState((current) =>
+      selectTaskFocus(current, currentSurface(tab, historyView), task.task_id, 'user'),
+    );
     setReplyMode(false);
   };
 
@@ -723,7 +794,7 @@ function App() {
                 <TaskList
                   tasks={pendingTasks}
                   mode="pending"
-                  activeTaskId={activeTask?.task_id}
+                  activeTaskId={tab === 'pending' ? activeTaskIdForSurface : undefined}
                   submittingTaskId={submittingTaskId}
                   selectedIds={emptySelection}
                   collapsedSessionIds={emptySelection}
@@ -738,7 +809,7 @@ function App() {
                   tasks={visibleHistoryTasks}
                   mode={historyView === 'archived' ? 'archived' : 'history'}
                   selectionMode={historySelectionMode}
-                  activeTaskId={activeTask?.task_id}
+                  activeTaskId={tab === 'history' ? activeTaskIdForSurface : undefined}
                   selectedIds={selectedIds}
                   collapsedSessionIds={collapsedSessionIds}
                   onSelectTask={selectTask}
@@ -768,12 +839,14 @@ function App() {
 
           <section className="detail-workspace">
             <MarkdownReader
-              markdown={activeTask?.markdown ?? 'Select a task to read its Markdown content.'}
-              userInput={activeTask?.status === 'completed' ? activeTask.user_input : undefined}
+              markdown={readerMarkdown}
+              userInput={readerTask?.status === 'completed' ? readerTask.user_input : undefined}
               canReply={activeTask?.status === 'pending'}
+              statusMessage={readerStatusMessage}
               settings={markdownSettings}
               onSettingsChange={setMarkdownSettings}
               onOpenReply={() => setReplyMode(true)}
+              onOpenReplacement={openReplacement}
               onCopyMarkdown={copyMarkdown}
             />
 

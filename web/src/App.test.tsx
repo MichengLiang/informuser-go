@@ -132,12 +132,20 @@ vi.mock('./features/markdown/MarkdownReader', () => ({
     markdown,
     userInput,
     canReply,
+    statusMessage,
     settings,
     onSettingsChange,
     onOpenReply,
+    onOpenReplacement,
     onCopyMarkdown,
   }: MockMarkdownReaderProps) => (
     <section data-testid="markdown-reader">
+      {statusMessage ? <div>{statusMessage}</div> : null}
+      {onOpenReplacement ? (
+        <button type="button" onClick={onOpenReplacement}>
+          Open replacement
+        </button>
+      ) : null}
       <div>{markdown}</div>
       {userInput ? <pre>{userInput}</pre> : null}
       <div>font {settings.fontSize}</div>
@@ -215,9 +223,11 @@ type MockMarkdownReaderProps = {
   markdown: string;
   userInput?: string;
   canReply?: boolean;
+  statusMessage?: string;
   settings: MockMarkdownSettings;
   onSettingsChange: (settings: MockMarkdownSettings) => void;
   onOpenReply?: () => void;
+  onOpenReplacement?: () => void;
   onCopyMarkdown?: (markdown: string) => Promise<void>;
 };
 
@@ -292,6 +302,75 @@ describe('App', () => {
       completed_at: 'now',
     });
     await waitFor(() => expect(apiMocks.fetchHistory).toHaveBeenCalledTimes(3));
+  });
+
+  it('keeps the current pending reader when a different-session task is created', async () => {
+    const active = task({
+      task_id: 'task-active',
+      session_id: 'session-active',
+      title: 'Active pending',
+      markdown: 'active markdown',
+    });
+    const created = task({
+      task_id: 'task-created',
+      session_id: 'session-created',
+      title: 'Created pending',
+      markdown: 'created markdown',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([active]);
+    apiMocks.fetchHistory.mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findByText('active markdown')).toBeInTheDocument();
+
+    eventHandler?.({ type: 'task_created', task: created });
+
+    expect(await screen.findByRole('button', { name: /Created pending/ })).toBeInTheDocument();
+    expect(screen.getByText('active markdown')).toBeInTheDocument();
+    expect(screen.queryByText('created markdown')).not.toBeInTheDocument();
+  });
+
+  it('shows a replaced reader state after same-session supersede until the replacement is opened', async () => {
+    const active = task({
+      task_id: 'task-old',
+      session_id: 'session-1',
+      title: 'Old pending',
+      markdown: 'old markdown',
+    });
+    const replacement = task({
+      task_id: 'task-new',
+      session_id: 'session-1',
+      title: 'New pending',
+      markdown: 'new markdown',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([active]);
+    apiMocks.fetchHistory.mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findByText('old markdown')).toBeInTheDocument();
+
+    eventHandler?.({
+      type: 'task_cancelled',
+      task_id: 'task-old',
+      session_id: 'session-1',
+      cancel_reason: 'superseded_by_new_task',
+      replacement_task_id: 'task-new',
+    });
+    eventHandler?.({ type: 'task_created', task: replacement });
+
+    expect(await screen.findByRole('button', { name: /New pending/ })).toBeInTheDocument();
+    expect(screen.getByText('old markdown')).toBeInTheDocument();
+    expect(
+      screen.getByText('This request was replaced by a newer request from the same session.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('new markdown')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open replacement' }));
+
+    expect(screen.getByText('new markdown')).toBeInTheDocument();
+    expect(screen.queryByText('old markdown')).not.toBeInTheDocument();
   });
 
   it('removes cancelled pending tasks from events without adding history', async () => {
@@ -505,7 +584,7 @@ describe('App', () => {
     expect(screen.getByTestId('history-history-2')).toBeInTheDocument();
   });
 
-  it('falls back to the next visible task after archiving the active history task', async () => {
+  it('keeps archived history content visible after archiving the active history task', async () => {
     const active = task({
       task_id: 'history-active',
       title: 'Active history',
@@ -538,10 +617,12 @@ describe('App', () => {
     await waitFor(() =>
       expect(apiMocks.archiveHistoryTasks).toHaveBeenCalledWith(['history-active']),
     );
-    expect(await screen.findByText('next markdown')).toBeInTheDocument();
+    expect(await screen.findByText('active markdown')).toBeInTheDocument();
+    expect(screen.getByText('This history item was archived.')).toBeInTheDocument();
+    expect(screen.queryByText('next markdown')).not.toBeInTheDocument();
   });
 
-  it('falls back to an empty reader after archiving the only visible history task', async () => {
+  it('keeps archived history content visible after archiving the only visible history task', async () => {
     const pending = task({
       task_id: 'pending-1',
       title: 'Pending fallback',
@@ -571,9 +652,8 @@ describe('App', () => {
     await waitFor(() =>
       expect(apiMocks.archiveHistoryTasks).toHaveBeenCalledWith(['history-active']),
     );
-    expect(
-      await screen.findByText('Select a task to read its Markdown content.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('active markdown')).toBeInTheDocument();
+    expect(screen.getByText('This history item was archived.')).toBeInTheDocument();
   });
 
   it('selects all, inverts, cancels, and surfaces archive errors without removing history', async () => {
@@ -1002,7 +1082,7 @@ describe('App', () => {
     await waitFor(() => expect(apiMocks.fetchHistory).toHaveBeenLastCalledWith(80, 1));
   });
 
-  it('falls back to the next visible archived task after restoring the active item', async () => {
+  it('keeps restored archived content visible after restoring the active item', async () => {
     const active = task({
       task_id: 'archived-active',
       title: 'Archived active',
@@ -1028,7 +1108,8 @@ describe('App', () => {
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     await userEvent.click(screen.getByTitle('Open archived history'));
-    expect(await screen.findByText('archived active markdown')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: /Archived active/ }));
+    expect(screen.getByText('archived active markdown')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const archivedList = await screen.findByTestId('task-list-archived');
     await userEvent.click(within(archivedList).getByLabelText('Select archived archived-active'));
@@ -1037,10 +1118,12 @@ describe('App', () => {
     await waitFor(() =>
       expect(apiMocks.unarchiveHistoryTasks).toHaveBeenCalledWith(['archived-active']),
     );
-    expect(await screen.findByText('archived next markdown')).toBeInTheDocument();
+    expect(await screen.findByText('archived active markdown')).toBeInTheDocument();
+    expect(screen.getByText('This archived item was restored to history.')).toBeInTheDocument();
+    expect(screen.queryByText('archived next markdown')).not.toBeInTheDocument();
   });
 
-  it('falls back to an empty archived reader after restoring the only visible item', async () => {
+  it('keeps restored archived content visible after restoring the only visible item', async () => {
     const archived = task({
       task_id: 'archived-active',
       title: 'Archived active',
@@ -1058,7 +1141,8 @@ describe('App', () => {
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     await userEvent.click(screen.getByTitle('Open archived history'));
-    expect(await screen.findByText('archived active markdown')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: /Archived active/ }));
+    expect(screen.getByText('archived active markdown')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const archivedList = await screen.findByTestId('task-list-archived');
     await userEvent.click(within(archivedList).getByLabelText('Select archived archived-active'));
@@ -1067,9 +1151,8 @@ describe('App', () => {
     await waitFor(() =>
       expect(apiMocks.unarchiveHistoryTasks).toHaveBeenCalledWith(['archived-active']),
     );
-    expect(
-      await screen.findByText('Select a task to read its Markdown content.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('archived active markdown')).toBeInTheDocument();
+    expect(screen.getByText('This archived item was restored to history.')).toBeInTheDocument();
   });
 
   it('removes restored archived rows when refreshing main history fails', async () => {
@@ -1100,7 +1183,8 @@ describe('App', () => {
 
     await userEvent.click(await screen.findByRole('tab', { name: 'History' }));
     await userEvent.click(screen.getByTitle('Open archived history'));
-    expect(await screen.findByText('restored archived markdown')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: /Restored archived/ }));
+    expect(screen.getByText('restored archived markdown')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Select' }));
     const archivedList = await screen.findByTestId('task-list-archived');
     await userEvent.click(within(archivedList).getByLabelText('Select archived archived-restored'));
@@ -1109,7 +1193,9 @@ describe('App', () => {
     expect(await screen.findByText('history refresh failed')).toBeInTheDocument();
     expect(screen.queryByTestId('archived-archived-restored')).not.toBeInTheDocument();
     expect(screen.getByTestId('archived-archived-remaining')).toBeInTheDocument();
-    expect(screen.getByText('remaining archived markdown')).toBeInTheDocument();
+    expect(screen.getByText('restored archived markdown')).toBeInTheDocument();
+    expect(screen.getByText('This archived item was restored to history.')).toBeInTheDocument();
+    expect(screen.queryByText('remaining archived markdown')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Restore (1)' })).not.toBeInTheDocument();
   });
 
