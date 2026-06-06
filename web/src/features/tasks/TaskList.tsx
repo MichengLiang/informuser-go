@@ -129,6 +129,15 @@ export function TaskList({
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
+    getItemKey: (index) => {
+      const item = items[index];
+      if (!item) {
+        return index;
+      }
+      return item.type === 'group'
+        ? `${mode}:group:${item.group.sessionId}`
+        : `${mode}:task:${item.task.task_id}`;
+    },
     estimateSize: (index) => {
       const item = items[index];
       if (item?.type === 'group') {

@@ -163,6 +163,21 @@ async function expectHistoryControlsAreOwnedBySidebar(page: {
   expect(result, result.reason).toMatchObject({ ok: true });
 }
 
+async function expectRowTranslateYBelow(row: Locator, maxY: number) {
+  await expect
+    .poll(async () =>
+      row.evaluate((element) => {
+        const transform = window.getComputedStyle(element).transform;
+        if (!transform || transform === 'none') {
+          return 0;
+        }
+        const matrix = new DOMMatrixReadOnly(transform);
+        return Math.round(matrix.m42);
+      }),
+    )
+    .toBeLessThan(maxY);
+}
+
 test('renders wide Markdown, opens reply mode, and shows completed user reply history', async ({
   page,
   request,
@@ -229,6 +244,53 @@ test('renders wide Markdown, opens reply mode, and shows completed user reply hi
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('Wide Markdown review');
   await expect(page.getByRole('heading', { name: 'User reply' })).toBeVisible();
   await expect(page.locator('.history-reply-content')).toContainText('Approved from Playwright');
+});
+
+test('keeps pending virtual row measurements tied to stable items after live prepends', async ({
+  page,
+  request,
+}) => {
+  await createE2ETask(
+    request,
+    'task-e2e-virtual-older',
+    'session-e2e-virtual-older',
+    'Older pending task',
+    '# Older pending task',
+  );
+  await createE2ETask(
+    request,
+    'task-e2e-virtual-tall',
+    'session-e2e-virtual-existing',
+    'Measured tall pending task with enough wrapped title text to force a larger virtual row measurement ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+    '# Tall pending task',
+  );
+  await renameE2ESession(request, 'session-e2e-virtual-existing', 'Existing virtual session');
+  await renameE2ESession(request, 'session-e2e-virtual-older', 'Older virtual session');
+
+  await page.goto('/');
+  await page.setViewportSize({ width: 640, height: 760 });
+
+  const olderGroup = page.locator('.task-group-row').filter({ hasText: 'Older virtual session' });
+  await expect(olderGroup).toBeVisible();
+  await expect
+    .poll(async () =>
+      olderGroup.evaluate((element) => Math.round(element.getBoundingClientRect().top)),
+    )
+    .toBeGreaterThan(200);
+
+  await createE2ETask(
+    request,
+    'task-e2e-virtual-new',
+    'session-e2e-virtual-new',
+    'New pending task',
+    '# New pending task',
+  );
+
+  const existingGroup = page
+    .locator('.task-group-row')
+    .filter({ hasText: 'Existing virtual session' });
+  await expect(existingGroup).toBeVisible();
+  await expectRowTranslateYBelow(existingGroup, 190);
 });
 
 test('groups sessions and runs archive workflow in the browser', async ({

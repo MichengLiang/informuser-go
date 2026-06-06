@@ -1,31 +1,48 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../lib/api';
 import { task } from '../../test/fixtures';
 import { TaskList } from './TaskList';
+
+const virtualizerTestState = vi.hoisted(() => ({
+  measuredSizes: new Map<string | number, number>(),
+}));
 
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({
     count,
     estimateSize,
     getScrollElement,
-    measureElement,
+    getItemKey = (index: number) => index,
   }: {
     count: number;
     estimateSize: (index: number) => number;
     getScrollElement: () => Element | null;
-    measureElement?: (element: Element | null) => void;
+    getItemKey?: (index: number) => string | number;
   }) => {
     getScrollElement();
+    const sizeForIndex = (index: number) => {
+      const key = getItemKey(index);
+      return virtualizerTestState.measuredSizes.get(key) ?? estimateSize(index);
+    };
     const starts = Array.from({ length: count }, (_, index) =>
-      Array.from({ length: index }, (_unused, previousIndex) => estimateSize(previousIndex)).reduce(
+      Array.from({ length: index }, (_unused, previousIndex) => sizeForIndex(previousIndex)).reduce(
         (total, size) => total + size,
         0,
       ),
     );
     return {
-      measureElement,
+      measureElement: (element: Element | null) => {
+        if (!element) {
+          return;
+        }
+        const index = Number(element.getAttribute('data-index'));
+        const measuredSize = element.textContent?.includes('Measured tall pending task')
+          ? 189
+          : estimateSize(index);
+        virtualizerTestState.measuredSizes.set(getItemKey(index), measuredSize);
+      },
       getTotalSize: () =>
         Array.from({ length: count }, (_unused, index) => estimateSize(index)).reduce(
           (total, size) => total + size,
@@ -41,6 +58,11 @@ vi.mock('@tanstack/react-virtual', () => ({
 }));
 
 describe('TaskList', () => {
+  beforeEach(() => {
+    virtualizerTestState.measuredSizes.clear();
+    vi.clearAllMocks();
+  });
+
   const defaultProps = {
     selectedIds: new Set<string>(),
     onSelectTask: vi.fn(),
@@ -332,6 +354,62 @@ describe('TaskList', () => {
       transform: 'translateY(54px)',
     });
     expect(groups[1]?.closest('.task-group-row')).toHaveStyle({ transform: 'translateY(162px)' });
+  });
+
+  it('does not reuse a measured task row height for a different task after prepending new sessions', () => {
+    const measuredTallTask = task({
+      task_id: 'task-tall',
+      session_id: 'session-existing',
+      session_display_name: 'Existing session',
+      title: 'Measured tall pending task',
+      created_at: '2026-06-05T02:00:00Z',
+    });
+    const olderTask = task({
+      task_id: 'task-older',
+      session_id: 'session-older',
+      session_display_name: 'Older session',
+      title: 'Older pending task',
+      created_at: '2026-06-05T01:00:00Z',
+    });
+    const prependedTask = task({
+      task_id: 'task-new',
+      session_id: 'session-new',
+      session_display_name: 'New session',
+      title: 'New pending task',
+      created_at: '2026-06-05T03:00:00Z',
+    });
+
+    const { rerender } = renderTaskList({ tasks: [measuredTallTask, olderTask], mode: 'pending' });
+
+    rerender(
+      <TaskList
+        {...defaultProps}
+        tasks={[measuredTallTask, olderTask]}
+        mode="pending"
+        selectedIds={new Set()}
+        onQuickReply={vi.fn().mockResolvedValue(undefined)}
+        onRenameSession={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: /Collapse Older session/ }).closest('.task-group-row'),
+    ).toHaveStyle({ transform: 'translateY(243px)' });
+
+    rerender(
+      <TaskList
+        {...defaultProps}
+        tasks={[prependedTask, measuredTallTask, olderTask]}
+        mode="pending"
+        selectedIds={new Set()}
+        onQuickReply={vi.fn().mockResolvedValue(undefined)}
+        onRenameSession={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: /Collapse Existing session/ }).closest('.task-group-row'),
+    ).toHaveStyle({ transform: 'translateY(162px)' });
   });
 
   it('aggregates history by session id and keeps duplicate display names separate', () => {
