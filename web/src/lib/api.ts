@@ -29,7 +29,13 @@ export type Session = {
 export type TaskEvent =
   | { type: 'task_created'; task: Task }
   | { type: 'task_completed'; task_id: string; session_id: string; completed_at: string }
-  | { type: 'task_cancelled'; task_id: string; session_id: string };
+  | {
+      type: 'task_cancelled';
+      task_id: string;
+      session_id: string;
+      cancel_reason?: string;
+      replacement_task_id?: string;
+    };
 
 type ListTasksResponse = {
   tasks: Task[];
