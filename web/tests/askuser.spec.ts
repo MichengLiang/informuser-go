@@ -293,6 +293,54 @@ test('keeps pending virtual row measurements tied to stable items after live pre
   await expectRowTranslateYBelow(existingGroup, 190);
 });
 
+test('keeps the reader focused across live task creation and supersede events', async ({
+  page,
+  request,
+}) => {
+  await createE2ETask(
+    request,
+    'task-e2e-focus-a',
+    'session-e2e-focus-a',
+    'Focus A',
+    '# Focus A\n\nKeep reading this request.',
+  );
+
+  await page.goto('/');
+  await expect(page.locator('.markdown-reader')).toContainText('Focus A');
+
+  await createE2ETask(
+    request,
+    'task-e2e-focus-b',
+    'session-e2e-focus-b',
+    'Focus B',
+    '# Focus B\n\nThis should not steal the reader.',
+  );
+
+  await expect(page.getByRole('button', { name: /Focus B/ })).toBeVisible();
+  await expect(page.locator('.markdown-reader')).toContainText('Focus A');
+  await expect(page.locator('.markdown-reader')).not.toContainText('Focus B');
+
+  await createE2ETask(
+    request,
+    'task-e2e-focus-c',
+    'session-e2e-focus-a',
+    'Focus C replacement',
+    '# Focus C\n\nOpen only after explicit action.',
+  );
+
+  await expect(page.getByRole('button', { name: /Focus C replacement/ })).toBeVisible();
+  await expect(page.locator('.markdown-reader')).toContainText('Focus A');
+  await expect(page.locator('.reader-status-banner')).toContainText(
+    'This request was replaced by a newer request from the same session.',
+  );
+  await expect(page.locator('.markdown-reader')).not.toContainText('Focus C');
+
+  await page.getByRole('button', { name: 'Open replacement' }).click();
+
+  await expect(page.locator('.markdown-reader')).toContainText('Focus C');
+  await expect(page.locator('.markdown-reader')).not.toContainText('Focus A');
+});
+
 test('groups sessions and runs archive workflow in the browser', async ({
   page,
   request,
