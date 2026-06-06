@@ -34,7 +34,12 @@ func (h *Handlers) createTask(w http.ResponseWriter, r *http.Request) {
 
 	if h.publisher != nil {
 		if outcome.SupersededTaskID != "" {
-			h.publisher.Publish(domain.NewTaskCancelledEvent(outcome.SupersededTaskID, request.SessionID))
+			h.publisher.Publish(domain.NewTaskCancelledEvent(
+				outcome.SupersededTaskID,
+				request.SessionID,
+				"superseded_by_new_task",
+				outcome.Task.TaskID,
+			))
 		}
 		if outcome.Status == app.CreateTaskCreated {
 			h.publisher.Publish(domain.NewTaskCreatedEvent(outcome.Task))
@@ -149,7 +154,7 @@ func (h *Handlers) cancelTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.publisher != nil {
-		h.publisher.Publish(domain.NewTaskCancelledEvent(taskID, task.SessionID))
+		h.publisher.Publish(domain.NewTaskCancelledEvent(taskID, task.SessionID, "cancelled_by_user", ""))
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

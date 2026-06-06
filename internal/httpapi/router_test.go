@@ -482,6 +482,58 @@ func TestCreateAndReplyPublishEvents(t *testing.T) {
 	}
 }
 
+func TestCreateTaskSupersedePublishesCancellationReasonAndReplacement(t *testing.T) {
+	publisher := &recordingPublisher{}
+	handler := newTestServerWithPublisher(t, publisher)
+
+	first := doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-old",
+		SessionID: "session-1",
+		Abstract:  "Old request",
+		Content:   "# Old",
+	})
+	if first.Code != http.StatusOK {
+		t.Fatalf("first create status = %d, body = %s", first.Code, first.Body.String())
+	}
+
+	second := doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-new",
+		SessionID: "session-1",
+		Abstract:  "New request",
+		Content:   "# New",
+	})
+	if second.Code != http.StatusOK {
+		t.Fatalf("second create status = %d, body = %s", second.Code, second.Body.String())
+	}
+
+	if len(publisher.events) != 3 {
+		t.Fatalf("published events = %#v, want create, cancel, create", publisher.events)
+	}
+	cancelled, ok := publisher.events[1].(domain.TaskEvent)
+	if !ok {
+		t.Fatalf("second event = %#v, want domain.TaskEvent", publisher.events[1])
+	}
+	if cancelled.Type != domain.EventTypeTaskCancelled {
+		t.Fatalf("second event type = %q, want task_cancelled", cancelled.Type)
+	}
+	if cancelled.TaskID != "task-old" || cancelled.SessionID != "session-1" {
+		t.Fatalf("cancelled event identity = %#v", cancelled)
+	}
+	if cancelled.CancelReason != "superseded_by_new_task" {
+		t.Fatalf("cancel reason = %q, want superseded_by_new_task", cancelled.CancelReason)
+	}
+	if cancelled.ReplacementTaskID != "task-new" {
+		t.Fatalf("replacement task id = %q, want task-new", cancelled.ReplacementTaskID)
+	}
+	created, ok := publisher.events[2].(domain.TaskEvent)
+	if !ok {
+		t.Fatalf("third event = %#v, want domain.TaskEvent", publisher.events[2])
+	}
+	if created.Type != domain.EventTypeTaskCreated || created.Task.TaskID != "task-new" {
+		t.Fatalf("third event = %#v, want task_created task-new", created)
+	}
+}
+
 func TestFindTaskEndpoint(t *testing.T) {
 	handler := newTestServer(t)
 

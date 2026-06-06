@@ -14,25 +14,31 @@ const (
 )
 
 type TaskEvent struct {
-	Type        EventType `json:"type"`
-	Task        Task      `json:"task,omitempty"`
-	TaskID      string    `json:"task_id,omitempty"`
-	SessionID   string    `json:"session_id,omitempty"`
-	CompletedAt time.Time `json:"completed_at,omitempty"`
+	Type              EventType `json:"type"`
+	Task              Task      `json:"task,omitempty"`
+	TaskID            string    `json:"task_id,omitempty"`
+	SessionID         string    `json:"session_id,omitempty"`
+	CompletedAt       time.Time `json:"completed_at,omitempty"`
+	CancelReason      string    `json:"cancel_reason,omitempty"`
+	ReplacementTaskID string    `json:"replacement_task_id,omitempty"`
 }
 
 func (e TaskEvent) MarshalJSON() ([]byte, error) {
 	type taskEventJSON struct {
-		Type        EventType  `json:"type"`
-		Task        *Task      `json:"task,omitempty"`
-		TaskID      string     `json:"task_id,omitempty"`
-		SessionID   string     `json:"session_id,omitempty"`
-		CompletedAt *time.Time `json:"completed_at,omitempty"`
+		Type              EventType  `json:"type"`
+		Task              *Task      `json:"task,omitempty"`
+		TaskID            string     `json:"task_id,omitempty"`
+		SessionID         string     `json:"session_id,omitempty"`
+		CompletedAt       *time.Time `json:"completed_at,omitempty"`
+		CancelReason      string     `json:"cancel_reason,omitempty"`
+		ReplacementTaskID string     `json:"replacement_task_id,omitempty"`
 	}
 	value := taskEventJSON{
-		Type:      e.Type,
-		TaskID:    e.TaskID,
-		SessionID: e.SessionID,
+		Type:              e.Type,
+		TaskID:            e.TaskID,
+		SessionID:         e.SessionID,
+		CancelReason:      e.CancelReason,
+		ReplacementTaskID: e.ReplacementTaskID,
 	}
 	if e.Task.TaskID != "" {
 		value.Task = &e.Task
@@ -59,10 +65,12 @@ func NewTaskCompletedEvent(taskID string, sessionID string, completedAt time.Tim
 	}
 }
 
-func NewTaskCancelledEvent(taskID string, sessionID string) TaskEvent {
+func NewTaskCancelledEvent(taskID string, sessionID string, cancelReason string, replacementTaskID string) TaskEvent {
 	return TaskEvent{
-		Type:      EventTypeTaskCancelled,
-		TaskID:    taskID,
-		SessionID: sessionID,
+		Type:              EventTypeTaskCancelled,
+		TaskID:            taskID,
+		SessionID:         sessionID,
+		CancelReason:      cancelReason,
+		ReplacementTaskID: replacementTaskID,
 	}
 }
