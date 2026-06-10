@@ -22,10 +22,25 @@ func TestWebSocketHandlerStreamsPublishedEvents(t *testing.T) {
 	}
 	defer conn.CloseNow()
 
-	hub.Publish(map[string]string{"type": "task_created"})
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				hub.Publish(map[string]string{"type": "task_created"})
+			}
+		}
+	}()
 
 	_, payload, err := conn.Read(ctx)
 	if err != nil {
