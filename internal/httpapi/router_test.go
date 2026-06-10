@@ -138,6 +138,75 @@ func TestCreateTaskAndPollResult(t *testing.T) {
 	}
 }
 
+func TestReplyCompletesCancelledTaskForStaleBrowserRows(t *testing.T) {
+	handler := newTestServer(t)
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Old prompt",
+		Content:   "old body",
+	})
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-2",
+		SessionID: "session-1",
+		Abstract:  "New prompt",
+		Content:   "new body",
+	})
+
+	reply := doJSON(t, handler, http.MethodPost, "/api/tasks/task-1/reply", submitReplyRequest{
+		UserInput:   "late answer",
+		ReplySource: "quick_paste",
+	})
+	if reply.Code != http.StatusOK {
+		t.Fatalf("reply status = %d, body = %s", reply.Code, reply.Body.String())
+	}
+
+	history := doJSON(t, handler, http.MethodGet, "/api/history?limit=10&offset=0", nil)
+	if history.Code != http.StatusOK {
+		t.Fatalf("history status = %d, body = %s", history.Code, history.Body.String())
+	}
+	historyBody := decodeBody[listTasksResponse](t, history)
+	if len(historyBody.Tasks) != 1 {
+		t.Fatalf("history body = %#v, want one completed task", historyBody)
+	}
+	if historyBody.Tasks[0].TaskID != "task-1" || historyBody.Tasks[0].UserInput != "late answer" {
+		t.Fatalf("history task = %#v", historyBody.Tasks[0])
+	}
+}
+
+func TestReplyIsIdempotentForAlreadyCompletedTask(t *testing.T) {
+	handler := newTestServer(t)
+
+	_ = doJSON(t, handler, http.MethodPost, "/api/tasks", createTaskRequest{
+		TaskID:    "task-1",
+		SessionID: "session-1",
+		Abstract:  "Need review",
+		Content:   "body",
+	})
+	firstReply := doJSON(t, handler, http.MethodPost, "/api/tasks/task-1/reply", submitReplyRequest{
+		UserInput:   "first answer",
+		ReplySource: "reply_panel",
+	})
+	if firstReply.Code != http.StatusOK {
+		t.Fatalf("first reply status = %d, body = %s", firstReply.Code, firstReply.Body.String())
+	}
+
+	repeatReply := doJSON(t, handler, http.MethodPost, "/api/tasks/task-1/reply", submitReplyRequest{
+		UserInput:   "late duplicate",
+		ReplySource: "quick_paste",
+	})
+	if repeatReply.Code != http.StatusOK {
+		t.Fatalf("repeat reply status = %d, body = %s", repeatReply.Code, repeatReply.Body.String())
+	}
+
+	result := doJSON(t, handler, http.MethodGet, "/api/tasks/task-1/result", nil)
+	resultBody := decodeBody[taskResultResponse](t, result)
+	if resultBody.UserInput != "first answer" {
+		t.Fatalf("result body = %#v, want original reply preserved", resultBody)
+	}
+}
+
 func TestCreateTaskAcceptsTitleMarkdownAliases(t *testing.T) {
 	handler := newTestServer(t)
 

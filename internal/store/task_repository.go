@@ -90,8 +90,8 @@ func (r *TaskRepository) CompleteTask(
 	result, err := r.db.ExecContext(
 		ctx,
 		`UPDATE tasks
-		SET status = ?, user_input = ?, reply_source = ?, completed_at = ?, updated_at = ?
-		WHERE task_id = ? AND status = ?`,
+		SET status = ?, user_input = ?, reply_source = ?, cancel_reason = '', completed_at = ?, updated_at = ?
+		WHERE task_id = ? AND status IN (?, ?)`,
 		domain.TaskStatusCompleted.String(),
 		userInput,
 		replySource,
@@ -99,6 +99,7 @@ func (r *TaskRepository) CompleteTask(
 		formatTime(completedAt),
 		taskID,
 		domain.TaskStatusPending.String(),
+		domain.TaskStatusCancelled.String(),
 	)
 	if err != nil {
 		return err

@@ -165,7 +165,19 @@ func (s *Service) SubmitReply(ctx context.Context, request SubmitReplyRequest) e
 	if err := request.Validate(); err != nil {
 		return err
 	}
-	return s.repository.CompleteTask(ctx, request.TaskID, request.UserInput, request.ReplySource, s.clock.Now())
+	if err := s.repository.CompleteTask(ctx, request.TaskID, request.UserInput, request.ReplySource, s.clock.Now()); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			task, found, findErr := s.repository.FindTaskByID(ctx, request.TaskID)
+			if findErr != nil {
+				return findErr
+			}
+			if found && task.Status == domain.TaskStatusCompleted {
+				return nil
+			}
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *Service) RenameSession(ctx context.Context, sessionID string, displayName string) (domain.Session, error) {

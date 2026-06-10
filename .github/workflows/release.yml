@@ -113,6 +113,11 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Generate artifact checksums
+        run: |
+          cd dist
+          sha256sum askuser-popup-* > checksums.txt
+
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:

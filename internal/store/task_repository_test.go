@@ -198,7 +198,7 @@ func TestCompleteTaskStoresReplyAndResult(t *testing.T) {
 	}
 }
 
-func TestCompleteTaskRejectsMissingAndCancelledTasks(t *testing.T) {
+func TestCompleteTaskRejectsMissingTasks(t *testing.T) {
 	ctx := context.Background()
 	repository := newTestRepository(t)
 	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
@@ -206,6 +206,13 @@ func TestCompleteTaskRejectsMissingAndCancelledTasks(t *testing.T) {
 	if err := repository.CompleteTask(ctx, "missing", "reply", "reply_panel", now); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("complete missing err = %v, want sql.ErrNoRows", err)
 	}
+}
+
+func TestCompleteTaskStoresReplyForCancelledTask(t *testing.T) {
+	ctx := context.Background()
+	repository := newTestRepository(t)
+	now := time.Date(2026, 6, 5, 1, 0, 0, 0, time.UTC)
+	completedAt := now.Add(2 * time.Minute)
 
 	if err := repository.InsertTask(ctx, sampleTask("task-1", "session-1", now)); err != nil {
 		t.Fatalf("insert task: %v", err)
@@ -213,8 +220,28 @@ func TestCompleteTaskRejectsMissingAndCancelledTasks(t *testing.T) {
 	if err := repository.CancelTask(ctx, "task-1", "reason", now.Add(time.Minute)); err != nil {
 		t.Fatalf("cancel task: %v", err)
 	}
-	if err := repository.CompleteTask(ctx, "task-1", "reply", "reply_panel", now.Add(2*time.Minute)); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("complete cancelled err = %v, want sql.ErrNoRows", err)
+	if err := repository.CompleteTask(ctx, "task-1", "reply", "reply_panel", completedAt); err != nil {
+		t.Fatalf("complete cancelled task: %v", err)
+	}
+
+	task, found, err := repository.FindTaskByID(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("find completed task: %v", err)
+	}
+	if !found {
+		t.Fatal("task should be found")
+	}
+	if task.Status != domain.TaskStatusCompleted {
+		t.Fatalf("status = %q, want completed", task.Status)
+	}
+	if task.UserInput != "reply" || task.ReplySource != "reply_panel" {
+		t.Fatalf("reply fields = %#v", task)
+	}
+	if task.CancelReason != "" {
+		t.Fatalf("cancel reason = %q, want cleared", task.CancelReason)
+	}
+	if !task.CompletedAt.Equal(completedAt) {
+		t.Fatalf("completed_at = %s, want %s", task.CompletedAt, completedAt)
 	}
 }
 

@@ -6,9 +6,29 @@ The project follows semantic versioning once public releases begin.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-10
+
 ### Added
 
 - Task rows can copy their summary to the clipboard with a double-click.
+- Task events now expose superseded task details so browser clients can retire
+  stale rows immediately.
+
+### Changed
+
+- Reader focus now remains stable while realtime task updates arrive.
+- Release artifacts now include SHA-256 checksums alongside the prebuilt
+  archives.
+
+### Fixed
+
+- Reply submission now tolerates stale browser rows whose task was cancelled by
+  a newer prompt, completing the original task when the user sends a late reply.
+- Repeated replies to an already completed task now return success without
+  overwriting the original answer.
+- Embedded browser assets are synced with the current web build.
+- Task row selection and virtual-list measurements remain stable during task
+  updates.
 
 ## [0.1.0] - 2026-06-05
 
