@@ -217,10 +217,11 @@ test('renders wide Markdown, opens reply mode, and shows completed user reply hi
   );
   expect(hasNoPageOverflow).toBeTruthy();
 
-  await page.getByRole('button', { name: /Reading/i }).click();
-  await page.locator('.settings-popover input[type="range"]').fill('20');
+  await page.getByRole('button', { name: /Reader settings/i }).click();
+  await page.getByRole('slider', { name: /Font size/i }).fill('20');
+  await page.keyboard.press('Escape');
   await expect(page.locator('.markdown-reader')).toHaveCSS('font-size', '20px');
-  await page.getByRole('button', { name: /Copy Markdown/i }).click();
+  await page.getByRole('button', { name: /Copy source/i }).click();
   await expect(page.getByRole('button', { name: /Copied/i })).toBeVisible();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(markdown);
 

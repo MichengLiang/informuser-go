@@ -16,7 +16,15 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MarkdownReader, type MarkdownSettings } from './features/markdown/MarkdownReader';
+import { deriveEffectiveLanguage } from './features/reader/language';
+import { MessageReader } from './features/reader/MessageReader';
+import { loadReaderSettings, saveReaderSettings } from './features/reader/settings';
+import type {
+  MarkupLanguage,
+  ReaderLanguageOverrides,
+  ReaderProjection,
+  ReaderSettings,
+} from './features/reader/types';
 import { ReplyPanel } from './features/reply/ReplyPanel';
 import {
   applyArchiveResult,
@@ -47,13 +55,6 @@ import {
 } from './lib/api';
 import { formatTasksAsXML } from './lib/export';
 import './App.css';
-
-const defaultMarkdownSettings: MarkdownSettings = {
-  fontSize: 15,
-  lineHeight: 'normal',
-  contentWidth: 'reading',
-  raw: false,
-};
 
 const historyPageSize = 80;
 
@@ -97,18 +98,6 @@ function statusMessage(
   }
 }
 
-function loadJSON<T>(key: string, fallback: T): T {
-  const value = localStorage.getItem(key);
-  if (!value) {
-    return fallback;
-  }
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
-
 function App() {
   const [pendingTasks, setPendingTasks] = useState<Task[]>([]);
   const [historyTasks, setHistoryTasks] = useState<Task[]>([]);
@@ -130,9 +119,11 @@ function App() {
   const [replyMode, setReplyMode] = useState(false);
   const [historySelectionMode, setHistorySelectionMode] = useState(false);
   const [archivedLoaded, setArchivedLoaded] = useState(false);
-  const [markdownSettings, setMarkdownSettings] = useState<MarkdownSettings>(() =>
-    loadJSON('askuser.markdownSettings', defaultMarkdownSettings),
+  const [readerSettings, setReaderSettings] = useState<ReaderSettings>(() => loadReaderSettings());
+  const [readerLanguageOverrides, setReaderLanguageOverrides] = useState<ReaderLanguageOverrides>(
+    {},
   );
+  const [readerProjection, setReaderProjection] = useState<ReaderProjection>('rendered');
   const [suffixEnabled, setSuffixEnabled] = useState(
     () => localStorage.getItem('askuser.suffix.enabled') === 'true',
   );
@@ -168,8 +159,8 @@ function App() {
   }, [historyView]);
 
   useEffect(() => {
-    localStorage.setItem('askuser.markdownSettings', JSON.stringify(markdownSettings));
-  }, [markdownSettings]);
+    saveReaderSettings(readerSettings);
+  }, [readerSettings]);
 
   useEffect(() => {
     localStorage.setItem('askuser.suffix.enabled', String(suffixEnabled));
@@ -301,11 +292,21 @@ function App() {
         setReplyMode(false);
       }
     : undefined;
-  const readerMarkdown =
-    readerTask?.markdown ??
-    (focusedTaskView.kind === 'empty'
-      ? focusedTaskView.message
-      : 'Select a task to read its Markdown content.');
+  // The backend field stays on the existing API name while the reader boundary
+  // exposes format-neutral source semantics.
+  const fallbackMessage =
+    focusedTaskView.kind === 'empty'
+      ? focusedTaskView.message.replace('Markdown content', 'source content')
+      : 'Select a task to read its source content.';
+  const readerSource = readerTask?.markdown ?? fallbackMessage;
+  const effectiveLanguage = deriveEffectiveLanguage(
+    readerTask?.task_id,
+    readerLanguageOverrides,
+    readerSettings,
+  );
+  const hasLanguageOverride = Boolean(
+    readerTask?.task_id && readerLanguageOverrides[readerTask.task_id],
+  );
   const emptySelection = useMemo(() => new Set<string>(), []);
 
   const combinedReply = (value: string) => {
@@ -563,14 +564,19 @@ function App() {
     }
   };
 
-  const copyMarkdown = async (markdown: string) => {
+  const copySource = async (source: string) => {
     setError(undefined);
     try {
-      await navigator.clipboard.writeText(markdown);
+      await navigator.clipboard.writeText(source);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to copy Markdown.');
+      setError(err instanceof Error ? err.message : 'Failed to copy source.');
       throw err;
     }
+  };
+
+  const handleLanguageOverrideChange = (taskId: string, language: MarkupLanguage) => {
+    // A task override represents a browser reading action, not task metadata.
+    setReaderLanguageOverrides((current) => ({ ...current, [taskId]: language }));
   };
 
   const changeTab = (value: string) => {
@@ -869,16 +875,22 @@ function App() {
           </section>
 
           <section className="detail-workspace">
-            <MarkdownReader
-              markdown={readerMarkdown}
+            <MessageReader
+              taskId={readerTask?.task_id}
+              source={readerSource}
               userInput={readerTask?.status === 'completed' ? readerTask.user_input : undefined}
               canReply={activeTask?.status === 'pending'}
               statusMessage={readerStatusMessage}
-              settings={markdownSettings}
-              onSettingsChange={setMarkdownSettings}
+              settings={readerSettings}
+              effectiveLanguage={effectiveLanguage}
+              projection={readerProjection}
+              hasLanguageOverride={hasLanguageOverride}
+              onSettingsChange={setReaderSettings}
+              onLanguageOverrideChange={handleLanguageOverrideChange}
+              onProjectionChange={setReaderProjection}
               onOpenReply={() => setReplyMode(true)}
               onOpenReplacement={openReplacement}
-              onCopyMarkdown={copyMarkdown}
+              onCopySource={copySource}
             />
 
             {replyMode ? (

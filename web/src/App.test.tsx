@@ -127,30 +127,47 @@ vi.mock('./features/tasks/TaskList', () => ({
   },
 }));
 
-vi.mock('./features/markdown/MarkdownReader', () => ({
-  MarkdownReader: ({
-    markdown,
+vi.mock('./features/reader/MessageReader', () => ({
+  MessageReader: ({
+    source,
     userInput,
     canReply,
     statusMessage,
     settings,
+    effectiveLanguage,
+    projection,
     onSettingsChange,
+    onLanguageOverrideChange,
+    onProjectionChange,
     onOpenReply,
     onOpenReplacement,
-    onCopyMarkdown,
-  }: MockMarkdownReaderProps) => (
-    <section data-testid="markdown-reader">
+    onCopySource,
+    taskId,
+  }: MockMessageReaderProps) => (
+    <section data-testid="message-reader">
       {statusMessage ? <div>{statusMessage}</div> : null}
       {onOpenReplacement ? (
         <button type="button" onClick={onOpenReplacement}>
           Open replacement
         </button>
       ) : null}
-      <div>{markdown}</div>
+      <div data-testid="reader-language">{effectiveLanguage}</div>
+      {projection === 'source' ? (
+        <pre data-testid="source-reader">{source}</pre>
+      ) : effectiveLanguage === 'asciidoc' ? (
+        <div>AsciiDoc rendered: {source}</div>
+      ) : (
+        <div>{source}</div>
+      )}
       {userInput ? <pre>{userInput}</pre> : null}
       <div>font {settings.fontSize}</div>
-      <button type="button" onClick={() => onCopyMarkdown?.(markdown)}>
-        Copy Markdown
+      <button
+        type="button"
+        onClick={() => {
+          void onCopySource?.(source).catch(() => undefined);
+        }}
+      >
+        Copy source
       </button>
       {canReply ? (
         <button type="button" onClick={onOpenReply}>
@@ -159,6 +176,24 @@ vi.mock('./features/markdown/MarkdownReader', () => ({
       ) : null}
       <button type="button" onClick={() => onSettingsChange({ ...settings, fontSize: 18 })}>
         Larger text
+      </button>
+      <button
+        type="button"
+        onClick={() => onSettingsChange({ ...settings, defaultLanguage: 'asciidoc' })}
+      >
+        Default AsciiDoc
+      </button>
+      <button type="button" onClick={() => taskId && onLanguageOverrideChange(taskId, 'markdown')}>
+        Markdown override
+      </button>
+      <button type="button" onClick={() => taskId && onLanguageOverrideChange(taskId, 'asciidoc')}>
+        AsciiDoc override
+      </button>
+      <button type="button" onClick={() => onProjectionChange('source')}>
+        Source projection
+      </button>
+      <button type="button" onClick={() => onProjectionChange('rendered')}>
+        Rendered projection
       </button>
     </section>
   ),
@@ -212,23 +247,29 @@ type MockTaskListProps = {
   onToggleGroupCollapsed?: (sessionId: string) => void;
 };
 
-type MockMarkdownSettings = {
+type MockReaderSettings = {
+  defaultLanguage: 'markdown' | 'asciidoc';
   fontSize: number;
   lineHeight: 'compact' | 'normal' | 'relaxed';
   contentWidth: 'full' | 'reading' | 'narrow';
-  raw: boolean;
 };
 
-type MockMarkdownReaderProps = {
-  markdown: string;
+type MockMessageReaderProps = {
+  source: string;
+  taskId?: string;
   userInput?: string;
   canReply?: boolean;
   statusMessage?: string;
-  settings: MockMarkdownSettings;
-  onSettingsChange: (settings: MockMarkdownSettings) => void;
+  settings: MockReaderSettings;
+  effectiveLanguage: 'markdown' | 'asciidoc';
+  projection: 'rendered' | 'source';
+  hasLanguageOverride: boolean;
+  onSettingsChange: (settings: MockReaderSettings) => void;
+  onLanguageOverrideChange: (taskId: string, language: 'markdown' | 'asciidoc') => void;
+  onProjectionChange: (projection: 'rendered' | 'source') => void;
   onOpenReply?: () => void;
   onOpenReplacement?: () => void;
-  onCopyMarkdown?: (markdown: string) => Promise<void>;
+  onCopySource?: (source: string) => Promise<void>;
 };
 
 type MockReplyPanelProps = {
@@ -527,7 +568,7 @@ describe('App', () => {
     expect(apiMocks.fetchHistory).toHaveBeenCalledTimes(2);
   });
 
-  it('combines reply panel suffixes and persists markdown settings', async () => {
+  it('combines reply panel suffixes and persists reader settings', async () => {
     localStorage.setItem('askuser.markdownSettings', '{');
     apiMocks.fetchPendingTasks.mockResolvedValue([task({ title: 'Needs panel reply' })]);
     apiMocks.fetchHistory.mockResolvedValue([]);
@@ -551,10 +592,11 @@ describe('App', () => {
     );
 
     await userEvent.click(screen.getByRole('button', { name: 'Larger text' }));
-    expect(localStorage.getItem('askuser.markdownSettings')).toContain('"fontSize":18');
+    expect(localStorage.getItem('askuser.readerSettings')).toContain('"fontSize":18');
+    expect(localStorage.getItem('askuser.markdownSettings')).toBeNull();
   });
 
-  it('copies the active task raw Markdown from the reader toolbar', async () => {
+  it('copies the active task source from the reader toolbar', async () => {
     apiMocks.fetchPendingTasks.mockResolvedValue([
       task({ markdown: '# Raw task\n\nDo not render before copying.' }),
     ]);
@@ -562,11 +604,105 @@ describe('App', () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Copy Markdown' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy source' }));
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       '# Raw task\n\nDo not render before copying.',
     );
+  });
+
+  it('initializes reader settings from the new storage key', async () => {
+    localStorage.setItem(
+      'askuser.readerSettings',
+      JSON.stringify({
+        defaultLanguage: 'asciidoc',
+        fontSize: 20,
+        lineHeight: 'relaxed',
+        contentWidth: 'narrow',
+      }),
+    );
+    apiMocks.fetchPendingTasks.mockResolvedValue([task({ markdown: '= Stored settings' })]);
+    apiMocks.fetchHistory.mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findByText('AsciiDoc rendered: = Stored settings')).toBeInTheDocument();
+    expect(screen.getByText('font 20')).toBeInTheDocument();
+  });
+
+  it('migrates legacy markdown settings and deletes the old key', async () => {
+    localStorage.setItem(
+      'askuser.markdownSettings',
+      JSON.stringify({
+        fontSize: 19,
+        lineHeight: 'compact',
+        contentWidth: 'full',
+        raw: true,
+      }),
+    );
+    apiMocks.fetchPendingTasks.mockResolvedValue([task({ markdown: '# Legacy settings' })]);
+    apiMocks.fetchHistory.mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findByText('# Legacy settings')).toBeInTheDocument();
+    expect(screen.getByText('font 19')).toBeInTheDocument();
+    expect(localStorage.getItem('askuser.markdownSettings')).toBeNull();
+    expect(localStorage.getItem('askuser.readerSettings')).not.toContain('raw');
+  });
+
+  it('uses default AsciiDoc for an uncovered task and keeps temporary Markdown override local', async () => {
+    const first = task({ task_id: 'task-adoc', title: 'AsciiDoc task', markdown: '= Title' });
+    const second = task({
+      task_id: 'task-adoc-2',
+      title: 'Second AsciiDoc task',
+      markdown: '= Second',
+    });
+    apiMocks.fetchPendingTasks.mockResolvedValue([first, second]);
+    apiMocks.fetchHistory.mockResolvedValue([]);
+
+    render(<App />);
+
+    expect(await screen.findByText('= Title')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Default AsciiDoc' }));
+    expect(screen.getByText('AsciiDoc rendered: = Title')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Markdown override' }));
+    expect(screen.getByText('= Title')).toBeInTheDocument();
+    expect(localStorage.getItem('askuser.readerSettings')).toContain(
+      '"defaultLanguage":"asciidoc"',
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /Second AsciiDoc task/ }));
+    expect(screen.getByText('AsciiDoc rendered: = Second')).toBeInTheDocument();
+  });
+
+  it('source projection shows original source text', async () => {
+    apiMocks.fetchPendingTasks.mockResolvedValue([task({ markdown: '= Source only' })]);
+    apiMocks.fetchHistory.mockResolvedValue([]);
+
+    render(<App />);
+
+    await screen.findByText('= Source only');
+    await userEvent.click(screen.getByRole('button', { name: 'Source projection' }));
+
+    expect(screen.getByTestId('source-reader')).toHaveTextContent('= Source only');
+    expect(screen.queryByText('AsciiDoc rendered: = Source only')).not.toBeInTheDocument();
+  });
+
+  it('reports source copy failures with source wording', async () => {
+    apiMocks.fetchPendingTasks.mockResolvedValue([task({ markdown: 'copy me' })]);
+    apiMocks.fetchHistory.mockResolvedValue([]);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue('plain source copy failure') },
+    });
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy source' }));
+
+    expect(await screen.findByText('Failed to copy source.')).toBeInTheDocument();
   });
 
   it('shows empty reader fallback and disables reply submission when no task is active', async () => {
@@ -576,7 +712,7 @@ describe('App', () => {
     render(<App />);
 
     expect(
-      await screen.findByText('Select a task to read its Markdown content.'),
+      await screen.findByText('Select a task to read its source content.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open reply' })).not.toBeInTheDocument();
 
