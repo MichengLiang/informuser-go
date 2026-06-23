@@ -296,7 +296,7 @@ function App() {
   // exposes format-neutral source semantics.
   const fallbackMessage =
     focusedTaskView.kind === 'empty'
-      ? focusedTaskView.message.replace('Markdown content', 'source content')
+      ? focusedTaskView.message
       : 'Select a task to read its source content.';
   const readerSource = readerTask?.markdown ?? fallbackMessage;
   const effectiveLanguage = deriveEffectiveLanguage(

@@ -240,10 +240,10 @@ export function applyRestoreResult(
 
 function emptyMessage(surface: FocusSurface) {
   if (surface === 'pending') {
-    return 'Select a task to read its Markdown content.';
+    return 'Select a task to read its source content.';
   }
   if (surface === 'archived') {
-    return 'Select an archived task to read its Markdown content.';
+    return 'Select an archived task to read its source content.';
   }
-  return 'Select a history task to read its Markdown content.';
+  return 'Select a history task to read its source content.';
 }
