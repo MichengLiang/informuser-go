@@ -647,6 +647,15 @@
   min-width: 0;
 }
 
+.reader-actions {
+  flex: 1 1 320px;
+  max-width: 100%;
+}
+
+.reply-heading-actions {
+  flex-shrink: 0;
+}
+
 .reader-scroll {
   flex: 1;
   min-width: 0;

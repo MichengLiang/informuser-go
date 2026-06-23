@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, test } from '@playwright/test';
+import { expect, type APIRequestContext, type Page, test } from '@playwright/test';
 import type { Locator } from '@playwright/test';
 
 const longToken =
@@ -18,6 +18,40 @@ the page outside the viewport: ${longToken}
 \`\`\`text
 ${'very_long_generated_identifier_'.repeat(16)}
 \`\`\`
+`;
+
+const asciidocLongCode = `${'very_long_asciidoc_generated_identifier_'.repeat(18)}end`;
+
+const asciidocReaderSource = `= Title
+
+This source should render through Asciidoctor.
+`;
+
+const secondAsciidocReaderSource = `= Second Title
+
+This task should inherit the default AsciiDoc renderer.
+`;
+
+const asciidocOverflowSource = `= Overflow Title
+
+|===
+| Column A | Column B | Column C | Column D
+
+| ${longToken}${longToken}
+| ${longToken}${longToken}
+| ${longToken}${longToken}
+| ${longToken}${longToken}
+|===
+
+[source,text]
+----
+${asciidocLongCode}
+----
+`;
+
+const markdownLongUrlSource = `# Markdown URL
+
+${longToken}${longToken}${longToken}
 `;
 
 async function createTask(request: APIRequestContext) {
@@ -178,6 +212,106 @@ async function expectRowTranslateYBelow(row: Locator, maxY: number) {
     .toBeLessThan(maxY);
 }
 
+async function expectNoPageHorizontalOverflow(page: Page) {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <= window.innerWidth &&
+          document.body.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBeTruthy();
+}
+
+async function expectReaderToolbarControlsStayInside(page: Page) {
+  const result = await page.locator('.reader').evaluate((reader) => {
+    const toolbar = reader.querySelector('.reader-toolbar');
+    const title = reader.querySelector('.reader-title');
+    const actions = reader.querySelector('.reader-actions');
+    const controls = Array.from(
+      reader.querySelectorAll('.reader-actions > button, .reader-actions > .segmented-control'),
+    );
+    if (!toolbar || !title || !actions || controls.length === 0) {
+      return { ok: false, reason: 'missing reader toolbar, title, actions, or controls' };
+    }
+
+    const readerBox = reader.getBoundingClientRect();
+    const titleBox = title.getBoundingClientRect();
+    const actionBox = actions.getBoundingClientRect();
+    const boxes = controls.map((control) => control.getBoundingClientRect());
+    const epsilon = 1;
+    const insideReader = (box: DOMRect) =>
+      box.left + epsilon >= readerBox.left &&
+      box.right <= readerBox.right + epsilon &&
+      box.top + epsilon >= readerBox.top &&
+      box.bottom <= readerBox.bottom + epsilon;
+    const overlaps = boxes.some((box, index) =>
+      boxes.some(
+        (other, otherIndex) =>
+          otherIndex > index &&
+          box.left < other.right - epsilon &&
+          box.right > other.left + epsilon &&
+          box.top < other.bottom - epsilon &&
+          box.bottom > other.top + epsilon,
+      ),
+    );
+    const titleOverlapsActions =
+      titleBox.left < actionBox.right - epsilon &&
+      titleBox.right > actionBox.left + epsilon &&
+      titleBox.top < actionBox.bottom - epsilon &&
+      titleBox.bottom > actionBox.top + epsilon;
+
+    return {
+      ok:
+        insideReader(titleBox) &&
+        insideReader(actionBox) &&
+        boxes.every(insideReader) &&
+        !overlaps &&
+        !titleOverlapsActions,
+      reason: JSON.stringify({
+        reader: readerBox.toJSON(),
+        title: titleBox.toJSON(),
+        actions: actionBox.toJSON(),
+        controls: boxes.map((box) => box.toJSON()),
+      }),
+    };
+  });
+
+  expect(result, result.reason).toMatchObject({ ok: true });
+}
+
+async function expectAsciiDocShadowText(page: Page, expected: string) {
+  await expect
+    .poll(() =>
+      page.locator('.asciidoc-reader-host').evaluate((host) => host.shadowRoot?.textContent ?? ''),
+    )
+    .toContain(expected);
+}
+
+async function expectAsciiDocElementScrollsInside(page: Page, selector: string) {
+  const result = await page.locator('.asciidoc-reader-host').evaluate((host, selector) => {
+    const element = host.shadowRoot?.querySelector(selector);
+    if (!(element instanceof HTMLElement)) {
+      return { ok: false, reason: `missing ${selector}` };
+    }
+    const style = window.getComputedStyle(element);
+    return {
+      ok:
+        element.scrollWidth > element.clientWidth &&
+        (style.overflowX === 'auto' || style.overflowX === 'scroll'),
+      reason: JSON.stringify({
+        selector,
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        overflowX: style.overflowX,
+      }),
+    };
+  }, selector);
+
+  expect(result, result.reason).toMatchObject({ ok: true });
+}
+
 test('renders wide Markdown, opens reply mode, and shows completed user reply history', async ({
   page,
   request,
@@ -212,10 +346,7 @@ test('renders wide Markdown, opens reply mode, and shows completed user reply hi
     )
     .toBeTruthy();
 
-  const hasNoPageOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth <= window.innerWidth && document.body.scrollWidth <= window.innerWidth,
-  );
-  expect(hasNoPageOverflow).toBeTruthy();
+  await expectNoPageHorizontalOverflow(page);
 
   await page.getByRole('button', { name: /Reader settings/i }).click();
   await page.getByRole('slider', { name: /Font size/i }).fill('20');
@@ -246,6 +377,103 @@ test('renders wide Markdown, opens reply mode, and shows completed user reply hi
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('Wide Markdown review');
   await expect(page.getByRole('heading', { name: 'User reply' })).toBeVisible();
   await expect(page.locator('.history-reply-content')).toContainText('Approved from Playwright');
+});
+
+test('keeps reader toolbar controls contained on desktop and narrow widths', async ({
+  page,
+  request,
+}) => {
+  await createE2ETask(
+    request,
+    'task-e2e-reader-layout',
+    'session-e2e-reader-layout',
+    'Reader toolbar layout',
+    '# Reader toolbar layout',
+  );
+
+  await page.goto('/');
+  await expect(page.locator('.markdown-reader')).toContainText('Reader toolbar layout');
+
+  await page.setViewportSize({ width: 1280, height: 760 });
+  await expectReaderToolbarControlsStayInside(page);
+  await expectNoPageHorizontalOverflow(page);
+
+  await page.setViewportSize({ width: 430, height: 760 });
+  await expectReaderToolbarControlsStayInside(page);
+  await expectNoPageHorizontalOverflow(page);
+});
+
+test('covers reader AsciiDoc settings, temporary overrides, source projection, and overflow bounds', async ({
+  page,
+  request,
+}) => {
+  await createE2ETask(
+    request,
+    'task-e2e-reader-asciidoc',
+    'session-e2e-reader',
+    'AsciiDoc reader task',
+    asciidocReaderSource,
+  );
+  await createE2ETask(
+    request,
+    'task-e2e-reader-second-asciidoc',
+    'session-e2e-reader-second',
+    'Second AsciiDoc reader task',
+    secondAsciidocReaderSource,
+  );
+  await createE2ETask(
+    request,
+    'task-e2e-reader-overflow-asciidoc',
+    'session-e2e-reader-overflow',
+    'AsciiDoc overflow task',
+    asciidocOverflowSource,
+  );
+  await createE2ETask(
+    request,
+    'task-e2e-reader-markdown-url',
+    'session-e2e-reader-markdown-url',
+    'Markdown long URL task',
+    markdownLongUrlSource,
+  );
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open task AsciiDoc reader task' }).click();
+  await expect(page.locator('.markdown-reader')).toContainText('= Title');
+
+  await page.getByRole('button', { name: /Reader settings/i }).click();
+  const dialog = page.getByRole('dialog', { name: 'Reader settings' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('radio', { name: 'AsciiDoc' }).click();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expectAsciiDocShadowText(page, 'Title');
+  await expect(page.locator('.markdown-reader')).toHaveCount(0);
+
+  await page.getByRole('radio', { name: 'Markdown' }).click();
+  await expect(page.locator('.markdown-reader')).toContainText('= Title');
+  await expect(page.locator('.asciidoc-reader-host')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Open task Second AsciiDoc reader task' }).click();
+  await expectAsciiDocShadowText(page, 'Second Title');
+  await expect(page.locator('.markdown-reader')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Open task AsciiDoc reader task' }).click();
+  await expect(page.locator('.markdown-reader')).toContainText('= Title');
+  await page.getByRole('radio', { name: 'Source' }).click();
+  await expect(page.locator('.source-reader')).toContainText('= Title');
+  await expect(page.locator('.source-reader')).toContainText('This source should render');
+  await page.getByRole('radio', { name: 'Rendered' }).click();
+
+  await page.getByRole('button', { name: 'Open task AsciiDoc overflow task' }).click();
+  await expectAsciiDocShadowText(page, 'Overflow Title');
+  await expectNoPageHorizontalOverflow(page);
+  await expectAsciiDocElementScrollsInside(page, 'table');
+  await expectAsciiDocElementScrollsInside(page, 'pre');
+
+  await page.getByRole('button', { name: 'Open task Markdown long URL task' }).click();
+  await page.getByRole('radio', { name: 'Markdown' }).click();
+  await expect(page.locator('.markdown-reader')).toContainText('Markdown URL');
+  await expectNoPageHorizontalOverflow(page);
 });
 
 test('keeps pending virtual row measurements tied to stable items after live prepends', async ({

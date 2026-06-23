@@ -38,8 +38,20 @@ const embeddedReaderCss = `
 
 pre,
 table {
+  display: block;
   max-width: 100%;
   overflow-x: auto;
+}
+
+pre,
+pre code {
+  overflow-wrap: normal;
+  white-space: pre;
+}
+
+pre code {
+  display: inline-block;
+  min-width: max-content;
 }
 `;
 
