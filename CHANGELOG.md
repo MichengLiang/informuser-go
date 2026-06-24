@@ -6,6 +6,34 @@ The project follows semantic versioning once public releases begin.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-24
+
+### Added
+
+- Message source reader can render task content as Markdown or AsciiDoc with a
+  per-task temporary language override and a persistent default render language.
+- Reader settings now include source-neutral layout controls for font size, line
+  height, content width, and default render language.
+- Browser coverage now verifies AsciiDoc rendering, source projection, toolbar
+  wrapping, and reader overflow boundaries.
+
+### Changed
+
+- Reader UI copy now uses source-neutral wording such as "Copy source" and
+  "Reader settings" while preserving the existing backend `markdown` API field.
+- AsciiDoc output is rendered inside Shadow DOM so the official Asciidoctor
+  stylesheet cannot leak into the workbench shell.
+
+### Fixed
+
+- AsciiDoc rendering now sanitizes passthrough HTML before inserting it into the
+  Shadow DOM.
+- Reader font-size settings now control AsciiDoc body text, lists, table cells,
+  and code blocks rather than only affecting inherited or heading text.
+- AsciiDoc tables and long code blocks stay inside reader overflow boundaries
+  instead of causing page-level horizontal scrolling.
+- Empty reader state messages now use source-neutral wording.
+
 ## [0.1.1] - 2026-06-10
 
 ### Added

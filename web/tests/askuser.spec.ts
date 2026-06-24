@@ -25,6 +25,17 @@ const asciidocLongCode = `${'very_long_asciidoc_generated_identifier_'.repeat(18
 const asciidocReaderSource = `= Title
 
 This source should render through Asciidoctor.
+
+* Reader list item
+
+|===
+| Reader table cell
+|===
+
+[source,text]
+----
+reader code block
+----
 `;
 
 const secondAsciidocReaderSource = `= Second Title
@@ -312,6 +323,28 @@ async function expectAsciiDocElementScrollsInside(page: Page, selector: string) 
   expect(result, result.reason).toMatchObject({ ok: true });
 }
 
+async function expectAsciiDocBodyFontSize(page: Page, expectedPx: string) {
+  const result = await page.locator('.asciidoc-reader-host').evaluate((host, expectedPx) => {
+    const selectors = ['p', 'li', 'td', 'pre code'];
+    const mismatches = selectors
+      .map((selector) => {
+        const element = host.shadowRoot?.querySelector(selector);
+        if (!(element instanceof HTMLElement)) {
+          return { selector, fontSize: 'missing' };
+        }
+        return { selector, fontSize: window.getComputedStyle(element).fontSize };
+      })
+      .filter((entry) => entry.fontSize !== expectedPx);
+
+    return {
+      ok: mismatches.length === 0,
+      reason: JSON.stringify({ expectedPx, mismatches }),
+    };
+  }, expectedPx);
+
+  expect(result, result.reason).toMatchObject({ ok: true });
+}
+
 test('renders wide Markdown, opens reply mode, and shows completed user reply history', async ({
   page,
   request,
@@ -444,9 +477,11 @@ test('covers reader AsciiDoc settings, temporary overrides, source projection, a
   const dialog = page.getByRole('dialog', { name: 'Reader settings' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('radio', { name: 'AsciiDoc' }).click();
+  await dialog.getByRole('slider', { name: /Font size/i }).fill('20');
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expectAsciiDocShadowText(page, 'Title');
+  await expectAsciiDocBodyFontSize(page, '20px');
   await expect(page.locator('.markdown-reader')).toHaveCount(0);
 
   await page.getByRole('radio', { name: 'Markdown' }).click();

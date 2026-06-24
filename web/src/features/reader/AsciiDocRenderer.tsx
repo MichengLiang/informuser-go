@@ -22,6 +22,45 @@ const embeddedReaderCss = `
   overflow-wrap: anywhere;
 }
 
+.asciidoc-render p,
+.asciidoc-render li,
+.asciidoc-render dt,
+.asciidoc-render dd,
+.asciidoc-render td,
+.asciidoc-render th,
+.asciidoc-render blockquote,
+.asciidoc-render summary,
+.asciidoc-render pre,
+.asciidoc-render code,
+.asciidoc-render kbd {
+  font-size: var(--reader-font-size) !important;
+  line-height: var(--reader-line-height);
+}
+
+.asciidoc-render :where(h1, h2, h3, h4, h5, h6, #toctitle, .sidebarblock > .content > .title) {
+  line-height: 1.2;
+}
+
+.asciidoc-render h1 {
+  font-size: calc(var(--reader-font-size) * 2.35);
+}
+
+.asciidoc-render h2 {
+  font-size: calc(var(--reader-font-size) * 1.9);
+}
+
+.asciidoc-render :where(h3, #toctitle, .sidebarblock > .content > .title) {
+  font-size: calc(var(--reader-font-size) * 1.55);
+}
+
+.asciidoc-render h4 {
+  font-size: calc(var(--reader-font-size) * 1.3);
+}
+
+.asciidoc-render :where(h5, h6) {
+  font-size: calc(var(--reader-font-size) * 1.15);
+}
+
 #header,
 #content,
 #footnotes,
